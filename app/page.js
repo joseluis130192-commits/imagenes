@@ -161,9 +161,9 @@ export default function Pagina() {
 
   /* -------------------------------------------------------------- vista */
   return (
-    <div className="min-h-screen sm:pl-[70px]">
+    <div className="min-h-screen w-full max-w-full sm:pl-[50px] lg:pl-[70px]">
       {/* franja de estado, arriba de todo */}
-      <div className="sticky top-0 z-50 -ml-0 border-b-[3px] border-tinta bg-amarillo px-5 py-2 sm:-ml-[70px] sm:pl-[76px]">
+      <div className="sticky top-0 z-50 border-b-[3px] border-tinta bg-amarillo px-4 py-2 sm:-ml-[50px] sm:pl-[56px] lg:-ml-[70px] lg:pl-[76px]">
         <p className="font-mono text-[11px] font-bold uppercase tracking-[0.08em]">
           <span className={hayKey ? "text-tinta" : "text-rojo"}>●</span>{" "}
           {hayKey ? "Conectado a la API de OpenAI" : "Sin API key configurada"}
@@ -189,8 +189,8 @@ export default function Pagina() {
         />
       </header>
 
-      <main className="grid items-start lg:grid-cols-[368px_1fr]">
-        <section className="border-b-[3px] border-tinta px-4 py-6 sm:px-6 lg:sticky lg:top-[46px] lg:border-b-0 lg:border-r-[3px] lg:pb-16">
+      <main className="grid w-full max-w-full grid-cols-1 items-start lg:grid-cols-[368px_minmax(0,1fr)]">
+        <section className="min-w-0 border-b-[3px] border-tinta px-4 py-6 sm:px-6 lg:sticky lg:top-[46px] lg:border-b-0 lg:border-r-[3px] lg:pb-16">
           <Controles
             estado={estado}
             set={set}

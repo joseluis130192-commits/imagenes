@@ -68,7 +68,7 @@ export default function Controles({ estado, set, modelos, archivos, setArchivos,
   } · ${tamanoCorto} · ${estado.cantidad}× · ${estado.formato.toUpperCase()}`;
 
   return (
-    <div className="space-y-4">
+    <div className="w-full min-w-0 space-y-4">
       <Segmento
         opciones={[
           { valor: "generar", nombre: "Generar" },
@@ -183,7 +183,7 @@ export default function Controles({ estado, set, modelos, archivos, setArchivos,
             id="modelo"
             value={estado.modelo}
             onChange={(e) => set({ modelo: e.target.value })}
-            className="campo cursor-pointer font-mono text-[13px]"
+            className="campo block w-full cursor-pointer truncate font-mono text-[13px]"
           >
             {modelos.map((m) => (
               <option key={m} value={m}>
