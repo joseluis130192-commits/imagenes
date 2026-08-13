@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 
-async function hmacHex(mensaje, clave) {
+const PUBLICAS = ["/entrar", "/api/entrar"];
+
+async function firma(clave) {
   const codificador = new TextEncoder();
   const llave = await crypto.subtle.importKey(
     "raw",
@@ -9,8 +11,8 @@ async function hmacHex(mensaje, clave) {
     false,
     ["sign"]
   );
-  const firma = await crypto.subtle.sign("HMAC", llave, codificador.encode(mensaje));
-  return Array.from(new Uint8Array(firma))
+  const bytes = await crypto.subtle.sign("HMAC", llave, codificador.encode("ok"));
+  return Array.from(new Uint8Array(bytes))
     .map((b) => b.toString(16).padStart(2, "0"))
     .join("");
 }
@@ -18,21 +20,33 @@ async function hmacHex(mensaje, clave) {
 export async function middleware(req) {
   const { pathname } = req.nextUrl;
 
-  if (pathname === "/entrar" || pathname === "/api/entrar" || pathname.startsWith("/_next")) {
+  // la puerta y su formulario quedan siempre accesibles
+  if (PUBLICAS.some((p) => pathname === p || pathname.startsWith(p + "/"))) {
     return NextResponse.next();
   }
 
-  const cookie = req.cookies.get("sesion")?.value || "";
-  const esperada = await hmacHex("ok", process.env.CLAVE_ACCESO || "");
-
-  if (cookie === esperada) {
-    return NextResponse.next();
+  const clave = process.env.CLAVE_ACCESO;
+  if (!clave) {
+    // sin clave configurada no dejamos pasar, pero avisamos en vez de romper
+    return new NextResponse("Falta la variable CLAVE_ACCESO en el entorno de Vercel.", {
+      status: 500,
+      headers: { "Content-Type": "text/plain; charset=utf-8" },
+    });
   }
 
-  const url = req.nextUrl.clone();
-  url.pathname = "/entrar";
-  url.search = "";
-  return NextResponse.redirect(url);
+  try {
+    const cookie = req.cookies.get("sesion")?.value;
+    if (cookie && cookie === (await firma(clave))) return NextResponse.next();
+  } catch {
+    // cualquier problema al verificar se trata como sesión inválida
+  }
+
+  const destino = req.nextUrl.clone();
+  destino.pathname = "/entrar";
+  destino.search = "";
+  return NextResponse.redirect(destino);
 }
 
-export const config = { matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"] };
+export const config = {
+  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
+};
