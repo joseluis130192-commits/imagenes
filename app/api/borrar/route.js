@@ -2,7 +2,7 @@ import { borrarImagen } from "@/lib/openai";
 
 export async function POST(req) {
   const { id } = await req.json();
-  const listo = await borrarImagen(id);
-  if (!listo) return Response.json({ error: "Esa imagen ya no está en el historial." }, { status: 404 });
+  const resultado = await borrarImagen(id);
+  if (!resultado.ok) return Response.json({ error: resultado.mensaje, paso: resultado.paso }, { status: 500 });
   return Response.json({ ok: true });
 }

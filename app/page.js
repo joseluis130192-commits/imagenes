@@ -144,7 +144,8 @@ export default function Pagina() {
     });
     if (!r.ok) {
       setHistorial(previo);
-      setAviso({ tipo: "error", texto: "No se pudo borrar la imagen." });
+      const datos = await r.json().catch(() => ({}));
+      setAviso({ tipo: "error", texto: datos.error || "No se pudo borrar la imagen." });
     }
   };
 
