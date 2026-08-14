@@ -43,17 +43,22 @@ export async function POST(req) {
   if (!r.ok) return Response.json({ error: r.mensaje, detalle: r.detalle }, { status: r.estado });
 
   const candidatas = (r.datos.data || []).filter((i) => i.b64_json);
-  const nuevas = await Promise.all(
-    candidatas.map((i) =>
-      guardarImagen(i.b64_json, formato, {
-        prompt,
-        modelo,
-        calidad,
-        tamano,
-        origen: "editada",
-      })
-    )
-  );
+  let nuevas;
+  try {
+    nuevas = await Promise.all(
+      candidatas.map((i) =>
+        guardarImagen(i.b64_json, formato, {
+          prompt,
+          modelo,
+          calidad,
+          tamano,
+          origen: "editada",
+        })
+      )
+    );
+  } catch (err) {
+    return Response.json({ error: err.message }, { status: 500 });
+  }
 
   if (!nuevas.length) {
     return Response.json({ error: "OpenAI respondió sin imágenes. Probá otra vez." }, { status: 502 });
