@@ -1,10 +1,9 @@
 import { leerHistorial } from "@/lib/openai";
 
 export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 export async function GET() {
-  return Response.json(
-    { historial: await leerHistorial() },
-    { headers: { "Cache-Control": "no-store" } }
-  );
+  const historial = await leerHistorial();
+  return Response.json({ historial }, { headers: { "Cache-Control": "no-store, max-age=0" } });
 }

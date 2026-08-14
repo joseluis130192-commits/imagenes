@@ -1,6 +1,7 @@
 import { llamarOpenAI } from "@/lib/openai";
 
 export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 export async function GET() {
   const r = await llamarOpenAI("/models");
@@ -9,5 +10,5 @@ export async function GET() {
     .map((m) => m.id)
     .filter((id) => id.includes("image"))
     .sort();
-  return Response.json({ modelos });
+  return Response.json({ modelos }, { headers: { "Cache-Control": "no-store, max-age=0" } });
 }

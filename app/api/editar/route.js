@@ -1,5 +1,6 @@
 import { llamarOpenAI, guardarImagen } from "@/lib/openai";
 
+export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
 /**
