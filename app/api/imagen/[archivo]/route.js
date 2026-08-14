@@ -1,5 +1,6 @@
 import path from "path";
 import { supabase } from "@/lib/supabase";
+import { claveObjeto } from "@/lib/openai";
 
 export const dynamic = "force-dynamic";
 
@@ -16,7 +17,14 @@ export async function GET(_req, { params }) {
   const tipo = TIPOS[path.extname(nombre).toLowerCase()];
   if (!tipo) return new Response("Formato no permitido", { status: 400 });
 
-  const { data, error } = await supabase.storage.from("imagenes").download(nombre);
+  let clave;
+  try {
+    clave = claveObjeto(nombre);
+  } catch {
+    return new Response("No encontrada", { status: 404 });
+  }
+
+  const { data, error } = await supabase.storage.from("imagenes").download(clave);
   if (error || !data) return new Response("No encontrada", { status: 404 });
 
   return new Response(await data.arrayBuffer(), {
