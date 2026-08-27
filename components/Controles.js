@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useRef } from "react";
-import { CALIDADES, ESTILOS, FONDOS, FORMATOS, TAMANOS, dolares } from "@/lib/config";
+import { CALIDADES, ESTILOS, FONDOS, FORMATOS, TAMANOS } from "@/lib/config";
+import { MODELOS_KIE, buscarModeloKie, esModeloKie } from "@/lib/proveedores";
 import Plegable from "@/components/Plegable";
 
 const CANTIDADES = [1, 2, 3, 4].map((n) => ({ valor: n, nombre: String(n) }));
@@ -62,10 +63,23 @@ export default function Controles({ estado, set, modelos, archivos, setArchivos,
     setArchivos((previos) => [...previos, ...nuevos].slice(0, 6));
   };
 
+  const entradaKie = buscarModeloKie(estado.modelo);
+  const controlesKie = entradaKie?.controles;
+  const mostrarCalidad = !controlesKie || controlesKie.calidad;
+  const mostrarCantidad = !controlesKie || controlesKie.cantidad;
+  const mostrarFormato = !controlesKie || controlesKie.formato;
+  const mostrarFondo = !controlesKie || controlesKie.fondo;
+  const opcionesFormato =
+    controlesKie?.formatosPermitidos
+      ? FORMATOS.filter((f) => controlesKie.formatosPermitidos.includes(f.valor))
+      : FORMATOS;
+
   const tamanoCorto = TAMANOS.find((t) => t.valor === estado.tamano)?.corto || estado.tamano;
-  const resumenAjustes = `${estado.modelo.replace("gpt-image-", "img ")} · ${
-    CALIDADES.find((c) => c.valor === estado.calidad)?.nombre || estado.calidad
-  } · ${tamanoCorto} · ${estado.cantidad}× · ${estado.formato.toUpperCase()}`;
+  const resumenAjustes = entradaKie
+    ? `${entradaKie.nombre} · Kie · ${tamanoCorto} · ${entradaKie.creditos} créd.`
+    : `${estado.modelo.replace("gpt-image-", "img ")} · ${
+        CALIDADES.find((c) => c.valor === estado.calidad)?.nombre || estado.calidad
+      } · ${tamanoCorto} · ${estado.cantidad}× · ${estado.formato.toUpperCase()}`;
 
   return (
     <div className="w-full min-w-0 space-y-4">
@@ -182,26 +196,44 @@ export default function Controles({ estado, set, modelos, archivos, setArchivos,
           <select
             id="modelo"
             value={estado.modelo}
-            onChange={(e) => set({ modelo: e.target.value })}
+            onChange={(e) => {
+              const v = e.target.value;
+              set(esModeloKie(v) ? { modelo: v, cantidad: 1 } : { modelo: v });
+            }}
             className="campo block w-full cursor-pointer truncate font-mono text-[13px]"
           >
-            {modelos.map((m) => (
-              <option key={m} value={m}>
-                {m}
-              </option>
-            ))}
+            <optgroup label="OpenAI">
+              {modelos.map((m) => (
+                <option key={m} value={m}>
+                  {m}
+                </option>
+              ))}
+            </optgroup>
+            <optgroup label="Kie AI">
+              {MODELOS_KIE.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.nombre}
+                </option>
+              ))}
+            </optgroup>
           </select>
         </div>
 
-        <Grupo etiqueta="Calidad" opciones={CALIDADES} valor={estado.calidad} onCambio={(v) => set({ calidad: v })} columnas={4} />
+        {mostrarCalidad && (
+          <Grupo etiqueta="Calidad" opciones={CALIDADES} valor={estado.calidad} onCambio={(v) => set({ calidad: v })} columnas={4} />
+        )}
 
         <Grupo etiqueta="Tamaño" opciones={TAMANOS} valor={estado.tamano} onCambio={(v) => set({ tamano: v })} columnas={4} />
 
-        <Grupo etiqueta="Cantidad" opciones={CANTIDADES} valor={estado.cantidad} onCambio={(v) => set({ cantidad: v })} columnas={4} />
+        {mostrarCantidad && (
+          <Grupo etiqueta="Cantidad" opciones={CANTIDADES} valor={estado.cantidad} onCambio={(v) => set({ cantidad: v })} columnas={4} />
+        )}
 
-        <Grupo etiqueta="Formato" opciones={FORMATOS} valor={estado.formato} onCambio={(v) => set({ formato: v })} columnas={3} />
+        {mostrarFormato && (
+          <Grupo etiqueta="Formato" opciones={opcionesFormato} valor={estado.formato} onCambio={(v) => set({ formato: v })} columnas={3} />
+        )}
 
-        {estado.modo === "generar" && (
+        {estado.modo === "generar" && mostrarFondo && (
           <Grupo etiqueta="Fondo" opciones={FONDOS} valor={estado.fondo} onCambio={(v) => set({ fondo: v })} columnas={3} />
         )}
       </Plegable>
@@ -211,7 +243,7 @@ export default function Controles({ estado, set, modelos, archivos, setArchivos,
           {generando ? "Generando…" : estado.modo === "editar" ? "Aplicar cambios →" : "Generar →"}
         </button>
         <p className="mt-3 text-center font-mono text-[11px] font-bold uppercase tracking-[0.06em] text-grafito">
-          Esta tanda: <span className="marcador text-tinta">{dolares(costo)}</span>
+          Esta tanda: <span className="marcador text-tinta">{costo}</span>
           <span className="mx-2">·</span>Ctrl + Enter
         </p>
       </div>

@@ -1,4 +1,6 @@
 import { llamarOpenAI, guardarImagen } from "@/lib/openai";
+import { crearTarea } from "@/lib/kie";
+import { buscarModeloKie } from "@/lib/proveedores";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -13,6 +15,15 @@ export async function POST(req) {
 
   const prompt = (cuerpo.prompt || "").trim();
   if (!prompt) return Response.json({ error: "Escribí un prompt antes de generar." }, { status: 400 });
+
+  const kie = buscarModeloKie(cuerpo.modelo);
+  if (kie) {
+    // Kie no devuelve la imagen acá: solo el taskId. El frontend polea /api/tarea/[taskId].
+    const input = kie.generar.armarInput(prompt, cuerpo.tamano || "auto", [], cuerpo.formato);
+    const r = await crearTarea(kie.generar.model, input);
+    if (!r.ok) return Response.json({ error: r.mensaje }, { status: r.estado || 500 });
+    return Response.json({ taskId: r.taskId, proveedor: "kie" }, { status: 202 });
+  }
 
   const pedido = {
     model: cuerpo.modelo || "gpt-image-1-mini",

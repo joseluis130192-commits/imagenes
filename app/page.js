@@ -6,7 +6,8 @@ import Controles from "@/components/Controles";
 import Galeria from "@/components/Galeria";
 import Medidor from "@/components/Medidor";
 import Visor from "@/components/Visor";
-import { MODELOS_BASE, precioUnitario } from "@/lib/config";
+import { MODELOS_BASE, dolares, precioUnitario } from "@/lib/config";
+import { buscarModeloKie, esModeloKieCrudo } from "@/lib/proveedores";
 
 const ESTADO_INICIAL = {
   modo: "generar",
@@ -30,6 +31,8 @@ export default function Pagina() {
   const [hayKey, setHayKey] = useState(true);
   const [presupuesto, setPresupuesto] = useState(2);
   const [visor, setVisor] = useState(-1);
+  const [creditosKie, setCreditosKie] = useState(0);
+  const [saldoKie, setSaldoKie] = useState(null);
 
   const set = (parcial) => setEstado((e) => ({ ...e, ...parcial }));
 
@@ -65,6 +68,11 @@ export default function Pagina() {
       .then((r) => r.json())
       .then((d) => setHistorial(d.historial || []))
       .catch(() => {});
+
+    fetch("/api/kie/creditos")
+      .then((r) => r.json())
+      .then((d) => setSaldoKie(typeof d.saldo === "number" ? d.saldo : null))
+      .catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -75,13 +83,71 @@ export default function Pagina() {
   const { imagenesHoy, gastoHoy } = useMemo(() => {
     const hoy = new Date().toDateString();
     const delDia = historial.filter((h) => new Date(h.fecha).toDateString() === hoy);
+    // Las filas de Kie no están en la tabla PRECIOS (esa es de OpenAI): se excluyen acá
+    // para no tarifarlas con precios que no les corresponden. Su costo se ve en créditos.
+    const delDiaOpenAI = delDia.filter((h) => !esModeloKieCrudo(h.modelo));
     return {
       imagenesHoy: delDia.length,
-      gastoHoy: delDia.reduce((suma, h) => suma + precioUnitario(h.modelo, h.calidad, h.tamano), 0),
+      gastoHoy: delDiaOpenAI.reduce((suma, h) => suma + precioUnitario(h.modelo, h.calidad, h.tamano), 0),
     };
   }, [historial]);
 
-  const costoTanda = precioUnitario(estado.modelo, estado.calidad, estado.tamano) * estado.cantidad;
+  const entradaKieActual = buscarModeloKie(estado.modelo);
+  const costoTanda = entradaKieActual
+    ? `${entradaKieActual.creditos} créd. Kie`
+    : dolares(precioUnitario(estado.modelo, estado.calidad, estado.tamano) * estado.cantidad);
+
+  /* ------------------------------------------------------- tareas de Kie */
+  // Kie no devuelve la imagen en la respuesta: solo un taskId. Hay que pollear
+  // hasta que la tarea termine. La mayoría termina en menos de 30s, pero el tope de
+  // intentos cubre el caso de que se cuelgue del lado de ellos.
+  const pollearTareaKie = async (taskId) => {
+    let ultimoEstado = "desconocido";
+
+    for (let intento = 0; intento < 90; intento++) {
+      await new Promise((r) => setTimeout(r, 2000));
+
+      let datos;
+      try {
+        const resp = await fetch(`/api/tarea/${taskId}`);
+        datos = await resp.json();
+      } catch {
+        continue; // fallo de red puntual al pollear: seguimos intentando
+      }
+
+      if (datos.estado === "listo") {
+        setHistorial((h) => [datos.imagen, ...h]);
+        if (typeof datos.imagen?.creditosConsumidos === "number") {
+          setCreditosKie((c) => c + datos.imagen.creditosConsumidos);
+        }
+        return;
+      }
+      if (datos.estado === "error") {
+        setAviso({ tipo: "error", texto: `${datos.mensaje} (tarea ${taskId})` });
+        return;
+      }
+      ultimoEstado = datos.ultimoEstado || ultimoEstado;
+    }
+
+    // Se agotaron los intentos, pero la tarea puede haber terminado del lado de Kie
+    // igual (por eso el botón: no hay que perderla, alcanza con volver a consultar).
+    setAviso({
+      tipo: "error",
+      texto: `Kie está tardando más de lo esperado (último estado: "${ultimoEstado}"). La tarea puede seguir corriendo del lado de ellos — taskId: ${taskId}.`,
+      accion: {
+        etiqueta: "Reintentar",
+        onClick: () => {
+          setAviso(null);
+          setGenerando(true);
+          setPendientes(1);
+          pollearTareaKie(taskId).finally(() => {
+            setGenerando(false);
+            setPendientes(0);
+          });
+        },
+      },
+    });
+  };
 
   /* ------------------------------------------------------------ generar */
   const generar = async () => {
@@ -121,9 +187,16 @@ export default function Pagina() {
 
       const datos = await respuesta.json();
       if (!respuesta.ok) {
-        setAviso({ tipo: "error", texto: datos.error || "OpenAI rechazó el pedido." });
+        setAviso({ tipo: "error", texto: datos.error || "El proveedor rechazó el pedido." });
         return;
       }
+
+      if (datos.proveedor === "kie") {
+        setPendientes(1); // cada tarea de Kie produce una sola imagen
+        await pollearTareaKie(datos.taskId);
+        return;
+      }
+
       setHistorial((h) => [...datos.imagenes, ...h]);
     } catch {
       setAviso({ tipo: "error", texto: "No se pudo hablar con el servidor. ¿Sigue corriendo npm run dev?" });
@@ -187,6 +260,8 @@ export default function Pagina() {
           gastoHoy={gastoHoy}
           presupuesto={presupuesto}
           onPresupuesto={setPresupuesto}
+          creditosKie={creditosKie}
+          saldoKie={saldoKie}
         />
       </header>
 
@@ -213,6 +288,11 @@ export default function Pagina() {
                           }`}
             >
               <p className="flex-1 whitespace-pre-wrap break-words">{aviso.texto}</p>
+              {aviso.accion && (
+                <button onClick={aviso.accion.onClick} className="boton shrink-0 px-3 py-1.5">
+                  {aviso.accion.etiqueta}
+                </button>
+              )}
               <button onClick={() => setAviso(null)} className="font-bold opacity-70 hover:opacity-100" aria-label="Cerrar aviso">
                 ✕
               </button>

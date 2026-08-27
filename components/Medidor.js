@@ -2,7 +2,7 @@
 
 import { dolares } from "@/lib/config";
 
-export default function Medidor({ imagenesHoy, gastoHoy, presupuesto, onPresupuesto }) {
+export default function Medidor({ imagenesHoy, gastoHoy, presupuesto, onPresupuesto, creditosKie, saldoKie }) {
   const proporcion = presupuesto > 0 ? Math.min(gastoHoy / presupuesto, 1) : 0;
   const pasado = presupuesto > 0 && gastoHoy >= presupuesto;
   const cerca = proporcion >= 0.8 && !pasado;
@@ -45,9 +45,20 @@ export default function Medidor({ imagenesHoy, gastoHoy, presupuesto, onPresupue
         </div>
 
         <i className="mt-1.5 block font-mono text-[9.5px] font-bold not-italic uppercase tracking-[0.1em] text-grafito">
-          gasto estimado del día
+          gasto estimado del día (US$, OpenAI)
         </i>
       </div>
+
+      {(creditosKie > 0 || saldoKie != null) && (
+        <div className="ficha shrink-0 rotate-[-0.6deg] px-3 py-2 sm:px-4 sm:py-2.5">
+          <b className="block font-display text-[21px] font-black leading-none tabular-nums sm:text-[24px]">
+            {creditosKie}
+          </b>
+          <i className="mt-1.5 block font-mono text-[9.5px] font-bold not-italic uppercase tracking-[0.1em] text-grafito">
+            créd. Kie{saldoKie != null ? ` · saldo ${saldoKie}` : ""}
+          </i>
+        </div>
+      )}
     </div>
   );
 }

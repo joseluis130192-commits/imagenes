@@ -1,4 +1,6 @@
 import { llamarOpenAI, guardarImagen } from "@/lib/openai";
+import { crearTarea, subirArchivo } from "@/lib/kie";
+import { buscarModeloKie } from "@/lib/proveedores";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -26,6 +28,22 @@ export async function POST(req) {
   const tamano = (entrada.get("tamano") || "1024x1024").toString();
   const formato = (entrada.get("formato") || "png").toString();
   const cantidad = Math.min(Math.max(Number(entrada.get("cantidad")) || 1, 1), 4);
+
+  const kie = buscarModeloKie(modelo);
+  if (kie) {
+    // Kie pide URLs, no binarios: subimos cada referencia antes de crear la tarea.
+    const urls = [];
+    for (const archivo of archivos) {
+      const subida = await subirArchivo(archivo);
+      if (!subida.ok) return Response.json({ error: subida.mensaje }, { status: 502 });
+      urls.push(subida.url);
+    }
+
+    const input = kie.editar.armarInput(prompt, tamano, urls, formato);
+    const r = await crearTarea(kie.editar.model, input);
+    if (!r.ok) return Response.json({ error: r.mensaje }, { status: r.estado || 500 });
+    return Response.json({ taskId: r.taskId, proveedor: "kie" }, { status: 202 });
+  }
 
   const salida = new FormData();
   salida.append("model", modelo);
