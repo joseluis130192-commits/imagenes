@@ -7,6 +7,10 @@ import Plegable from "@/components/Plegable";
 
 const CANTIDADES = [1, 2, 3, 4].map((n) => ({ valor: n, nombre: String(n) }));
 
+// El selector se agrupa por uso, no por proveedor. Los modelos de OpenAI (genéricos,
+// sirven tanto para foto realista como para editar) van siempre en "Realista".
+const GRUPOS_ORDEN = ["Realista", "Edición", "Económicos", "Retoque"];
+
 function Segmento({ opciones, valor, onCambio }) {
   return (
     <div className="grid grid-cols-2 gap-2">
@@ -81,6 +85,20 @@ export default function Controles({ estado, set, modelos, archivos, setArchivos,
         CALIDADES.find((c) => c.valor === estado.calidad)?.nombre || estado.calidad
       } · ${tamanoCorto} · ${estado.cantidad}× · ${estado.formato.toUpperCase()}`;
 
+  // Agrupado por uso: los de Kie que no ofrecen el modo actual (ej. Z-Image no edita,
+  // Recraft/Topaz/el segment-map de Grok no generan desde cero) directamente no aparecen.
+  const grupos = useMemo(() => {
+    const mapa = Object.fromEntries(GRUPOS_ORDEN.map((g) => [g, []]));
+    modelos.forEach((m) => mapa.Realista.push({ valor: m, etiqueta: m }));
+    MODELOS_KIE.forEach((m) => {
+      if (estado.modo === "generar" && !m.generar) return;
+      if (estado.modo === "editar" && !m.editar) return;
+      const grupo = GRUPOS_ORDEN.includes(m.grupo) ? m.grupo : "Realista";
+      mapa[grupo].push({ valor: m.id, etiqueta: m.nombre });
+    });
+    return mapa;
+  }, [modelos, estado.modo]);
+
   return (
     <div className="w-full min-w-0 space-y-4">
       <Segmento
@@ -89,7 +107,13 @@ export default function Controles({ estado, set, modelos, archivos, setArchivos,
           { valor: "editar", nombre: "Editar" },
         ]}
         valor={estado.modo}
-        onCambio={(v) => set({ modo: v })}
+        onCambio={(v) => {
+          // Si el modelo elegido no ofrece el modo al que se cambia (Recraft/Topaz/el
+          // segment-map de Grok no generan; Z-Image/Seedream no editan), no puede quedar
+          // seleccionado ahí: se cae a OpenAI, que sirve para los dos modos.
+          const sinSoporte = entradaKie && !entradaKie[v];
+          set(sinSoporte ? { modo: v, modelo: modelos[0] || "gpt-image-1-mini" } : { modo: v });
+        }}
       />
 
       {estado.modo === "editar" && (
@@ -202,21 +226,19 @@ export default function Controles({ estado, set, modelos, archivos, setArchivos,
             }}
             className="campo block w-full cursor-pointer truncate font-mono text-[13px]"
           >
-            <optgroup label="OpenAI">
-              {modelos.map((m) => (
-                <option key={m} value={m}>
-                  {m}
-                </option>
-              ))}
-            </optgroup>
-            <optgroup label="Kie AI">
-              {MODELOS_KIE.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.nombre}
-                </option>
-              ))}
-            </optgroup>
+            {GRUPOS_ORDEN.filter((g) => grupos[g].length).map((g) => (
+              <optgroup key={g} label={g}>
+                {grupos[g].map((o) => (
+                  <option key={o.valor} value={o.valor}>
+                    {o.etiqueta}
+                  </option>
+                ))}
+              </optgroup>
+            ))}
           </select>
+          {entradaKie?.nota && (
+            <p className="mt-1.5 text-[11px] font-medium leading-snug text-grafito">{entradaKie.nota}</p>
+          )}
         </div>
 
         {mostrarCalidad && (

@@ -5,7 +5,11 @@ import { tamanoDesdeAspecto } from "@/lib/proveedores";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-const CAMPOS_IMAGENES = ["input_urls", "image_urls", "image_input"];
+// Campos de `input` que llevan referencias: arrays de URLs (varias imágenes) o un
+// string (una sola, como en Recraft/Topaz/el segment-map de Grok). Sirven para saber
+// si la tarea partió de una imagen ("editada") o no ("generada"), y cuántas.
+const CAMPOS_IMAGENES_ARRAY = ["input_urls", "image_urls", "image_input"];
+const CAMPOS_IMAGENES_STRING = ["image", "image_url"];
 const EXTENSIONES = ["png", "jpg", "jpeg", "webp"];
 
 /**
@@ -84,7 +88,9 @@ export async function GET(_req, { params }) {
   }
 
   const input = r.param?.input || {};
-  const campoImagenes = CAMPOS_IMAGENES.find((c) => Array.isArray(input[c]) && input[c].length);
+  const campoArray = CAMPOS_IMAGENES_ARRAY.find((c) => Array.isArray(input[c]) && input[c].length);
+  const campoString = !campoArray && CAMPOS_IMAGENES_STRING.find((c) => typeof input[c] === "string" && input[c]);
+  const tieneReferencias = Boolean(campoArray || campoString);
   const formato = formatoDesdeUrl(urlResultado, input.output_format);
 
   let ficha;
@@ -94,8 +100,8 @@ export async function GET(_req, { params }) {
       modelo: r.modelo || "kie",
       calidad: input.resolution || "kie",
       tamano: tamanoDesdeAspecto(input.aspect_ratio),
-      origen: campoImagenes ? "editada" : "generada",
-      referencias: campoImagenes ? input[campoImagenes].length : null,
+      origen: tieneReferencias ? "editada" : "generada",
+      referencias: campoArray ? input[campoArray].length : campoString ? 1 : null,
     });
   } catch (err) {
     return json({ estado: "error", mensaje: err.message, taskId }, { status: 500 });

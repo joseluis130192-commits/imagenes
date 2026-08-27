@@ -31,6 +31,10 @@ export async function POST(req) {
 
   const kie = buscarModeloKie(modelo);
   if (kie) {
+    if (!kie.editar) {
+      return Response.json({ error: `${kie.nombre} no edita imágenes: solo genera desde cero.` }, { status: 400 });
+    }
+
     // Kie pide URLs, no binarios: subimos cada referencia antes de crear la tarea.
     const urls = [];
     for (const archivo of archivos) {
@@ -39,7 +43,7 @@ export async function POST(req) {
       urls.push(subida.url);
     }
 
-    const input = kie.editar.armarInput(prompt, tamano, urls, formato);
+    const input = kie.editar.armarInput(prompt, tamano, urls, formato, calidad);
     const r = await crearTarea(kie.editar.model, input);
     if (!r.ok) return Response.json({ error: r.mensaje }, { status: r.estado || 500 });
     return Response.json({ taskId: r.taskId, proveedor: "kie" }, { status: 202 });

@@ -18,8 +18,11 @@ export async function POST(req) {
 
   const kie = buscarModeloKie(cuerpo.modelo);
   if (kie) {
+    if (!kie.generar) {
+      return Response.json({ error: `${kie.nombre} no genera imágenes desde cero: solo edita una que ya tengas.` }, { status: 400 });
+    }
     // Kie no devuelve la imagen acá: solo el taskId. El frontend polea /api/tarea/[taskId].
-    const input = kie.generar.armarInput(prompt, cuerpo.tamano || "auto", [], cuerpo.formato);
+    const input = kie.generar.armarInput(prompt, cuerpo.tamano || "auto", [], cuerpo.formato, cuerpo.calidad);
     const r = await crearTarea(kie.generar.model, input);
     if (!r.ok) return Response.json({ error: r.mensaje }, { status: r.estado || 500 });
     return Response.json({ taskId: r.taskId, proveedor: "kie" }, { status: 202 });
