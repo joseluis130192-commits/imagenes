@@ -2,13 +2,12 @@
 
 import { useEffect, useMemo, useRef } from "react";
 import { CALIDADES, ESTILOS, FONDOS, FORMATOS, TAMANOS } from "@/lib/config";
-import { MODELOS_KIE, buscarModeloKie, esModeloKie } from "@/lib/proveedores";
+import { MODELOS_KIE, buscarModeloKie } from "@/lib/proveedores";
 import Plegable from "@/components/Plegable";
 
 const CANTIDADES = [1, 2, 3, 4].map((n) => ({ valor: n, nombre: String(n) }));
 
-// El selector se agrupa por uso, no por proveedor. Los modelos de OpenAI (genéricos,
-// sirven tanto para foto realista como para editar) van siempre en "Realista".
+// El selector se agrupa por uso: "Realista", "Edición", "Económicos", "Retoque".
 const GRUPOS_ORDEN = ["Realista", "Edición", "Económicos", "Retoque"];
 
 function Segmento({ opciones, valor, onCambio }) {
@@ -55,7 +54,7 @@ function Grupo({ opciones, valor, onCambio, columnas = 4, etiqueta }) {
   );
 }
 
-export default function Controles({ estado, set, modelos, archivos, setArchivos, onGenerar, generando, costo }) {
+export default function Controles({ estado, set, archivos, setArchivos, onGenerar, generando, costo }) {
   const inputArchivos = useRef(null);
 
   // Una URL por archivo, liberada al cambiar la lista: evita que se acumulen en memoria.
@@ -67,29 +66,25 @@ export default function Controles({ estado, set, modelos, archivos, setArchivos,
     setArchivos((previos) => [...previos, ...nuevos].slice(0, 6));
   };
 
-  const entradaKie = buscarModeloKie(estado.modelo);
-  const controlesKie = entradaKie?.controles;
-  const mostrarCalidad = !controlesKie || controlesKie.calidad;
-  const mostrarCantidad = !controlesKie || controlesKie.cantidad;
-  const mostrarFormato = !controlesKie || controlesKie.formato;
-  const mostrarFondo = !controlesKie || controlesKie.fondo;
-  const opcionesFormato =
-    controlesKie?.formatosPermitidos
-      ? FORMATOS.filter((f) => controlesKie.formatosPermitidos.includes(f.valor))
-      : FORMATOS;
+  // Fallback defensivo: si estado.modelo quedó con un id inválido (no debería pasar,
+  // ver reusar() en page.js) mejor mostrar el primer modelo que romper el panel.
+  const entradaKie = buscarModeloKie(estado.modelo) || MODELOS_KIE[0];
+  const controlesKie = entradaKie.controles;
+  const mostrarCalidad = controlesKie.calidad;
+  const mostrarCantidad = controlesKie.cantidad;
+  const mostrarFormato = controlesKie.formato;
+  const mostrarFondo = controlesKie.fondo;
+  const opcionesFormato = controlesKie.formatosPermitidos
+    ? FORMATOS.filter((f) => controlesKie.formatosPermitidos.includes(f.valor))
+    : FORMATOS;
 
   const tamanoCorto = TAMANOS.find((t) => t.valor === estado.tamano)?.corto || estado.tamano;
-  const resumenAjustes = entradaKie
-    ? `${entradaKie.nombre} · Kie · ${tamanoCorto} · ${entradaKie.creditos} créd.`
-    : `${estado.modelo.replace("gpt-image-", "img ")} · ${
-        CALIDADES.find((c) => c.valor === estado.calidad)?.nombre || estado.calidad
-      } · ${tamanoCorto} · ${estado.cantidad}× · ${estado.formato.toUpperCase()}`;
+  const resumenAjustes = `${entradaKie.nombre} · ${tamanoCorto} · ${entradaKie.creditos} créd.`;
 
-  // Agrupado por uso: los de Kie que no ofrecen el modo actual (ej. Z-Image no edita,
+  // Agrupado por uso: los modelos que no ofrecen el modo actual (ej. Z-Image no edita,
   // Recraft/Topaz/el segment-map de Grok no generan desde cero) directamente no aparecen.
   const grupos = useMemo(() => {
     const mapa = Object.fromEntries(GRUPOS_ORDEN.map((g) => [g, []]));
-    modelos.forEach((m) => mapa.Realista.push({ valor: m, etiqueta: m }));
     MODELOS_KIE.forEach((m) => {
       if (estado.modo === "generar" && !m.generar) return;
       if (estado.modo === "editar" && !m.editar) return;
@@ -97,7 +92,7 @@ export default function Controles({ estado, set, modelos, archivos, setArchivos,
       mapa[grupo].push({ valor: m.id, etiqueta: m.nombre });
     });
     return mapa;
-  }, [modelos, estado.modo]);
+  }, [estado.modo]);
 
   return (
     <div className="w-full min-w-0 space-y-4">
@@ -110,9 +105,10 @@ export default function Controles({ estado, set, modelos, archivos, setArchivos,
         onCambio={(v) => {
           // Si el modelo elegido no ofrece el modo al que se cambia (Recraft/Topaz/el
           // segment-map de Grok no generan; Z-Image/Seedream no editan), no puede quedar
-          // seleccionado ahí: se cae a OpenAI, que sirve para los dos modos.
-          const sinSoporte = entradaKie && !entradaKie[v];
-          set(sinSoporte ? { modo: v, modelo: modelos[0] || "gpt-image-1-mini" } : { modo: v });
+          // seleccionado ahí: se cae a otro modelo que sí lo ofrezca.
+          const sinSoporte = !entradaKie[v];
+          const alternativa = MODELOS_KIE.find((m) => m[v])?.id;
+          set(sinSoporte && alternativa ? { modo: v, modelo: alternativa } : { modo: v });
         }}
       />
 
@@ -220,10 +216,7 @@ export default function Controles({ estado, set, modelos, archivos, setArchivos,
           <select
             id="modelo"
             value={estado.modelo}
-            onChange={(e) => {
-              const v = e.target.value;
-              set(esModeloKie(v) ? { modelo: v, cantidad: 1 } : { modelo: v });
-            }}
+            onChange={(e) => set({ modelo: e.target.value, cantidad: 1 })}
             className="campo block w-full cursor-pointer truncate font-mono text-[13px]"
           >
             {GRUPOS_ORDEN.filter((g) => grupos[g].length).map((g) => (
@@ -236,7 +229,7 @@ export default function Controles({ estado, set, modelos, archivos, setArchivos,
               </optgroup>
             ))}
           </select>
-          {entradaKie?.nota && (
+          {entradaKie.nota && (
             <p className="mt-1.5 text-[11px] font-medium leading-snug text-grafito">{entradaKie.nota}</p>
           )}
         </div>

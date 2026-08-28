@@ -1,4 +1,4 @@
-import { leerHistorial } from "@/lib/openai";
+import { leerHistorial } from "@/lib/almacen";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;

@@ -1,10 +1,8 @@
 "use client";
 
-import { dolares } from "@/lib/config";
-
-export default function Medidor({ imagenesHoy, gastoHoy, presupuesto, onPresupuesto, creditosKie, saldoKie }) {
-  const proporcion = presupuesto > 0 ? Math.min(gastoHoy / presupuesto, 1) : 0;
-  const pasado = presupuesto > 0 && gastoHoy >= presupuesto;
+export default function Medidor({ imagenesHoy, creditosGastados, presupuesto, onPresupuesto, saldoKie }) {
+  const proporcion = presupuesto > 0 ? Math.min(creditosGastados / presupuesto, 1) : 0;
+  const pasado = presupuesto > 0 && creditosGastados >= presupuesto;
   const cerca = proporcion >= 0.8 && !pasado;
 
   return (
@@ -19,15 +17,15 @@ export default function Medidor({ imagenesHoy, gastoHoy, presupuesto, onPresupue
       <div className={`ficha flex-1 px-3 py-2 rotate-[0.6deg] sm:flex-none sm:min-w-[214px] sm:px-4 sm:py-2.5 ${pasado ? "bg-rojo/10" : ""}`}>
         <div className="flex items-baseline justify-between gap-3">
           <b className="font-display text-[21px] font-black leading-none tabular-nums sm:text-[24px]">
-            <span className={pasado ? "text-rojo" : ""}>{dolares(gastoHoy)}</span>
+            <span className={pasado ? "text-rojo" : ""}>{creditosGastados}</span>
           </b>
           <label className="flex items-center gap-1 font-mono text-[12px] font-bold text-grafito">
             <span aria-hidden>de</span>
-            <span className="sr-only">Presupuesto diario en dólares</span>
+            <span className="sr-only">Presupuesto diario en créditos</span>
             <input
               type="number"
               min="0"
-              step="0.5"
+              step="1"
               value={presupuesto}
               onChange={(e) => onPresupuesto(Number(e.target.value))}
               className="w-12 border-b-2 border-dashed border-tinta/40 bg-transparent text-right tabular-nums
@@ -45,20 +43,9 @@ export default function Medidor({ imagenesHoy, gastoHoy, presupuesto, onPresupue
         </div>
 
         <i className="mt-1.5 block font-mono text-[9.5px] font-bold not-italic uppercase tracking-[0.1em] text-grafito">
-          gasto estimado del día (US$, OpenAI)
+          créditos gastados (sesión){saldoKie != null ? ` · saldo Kie ${saldoKie}` : ""}
         </i>
       </div>
-
-      {(creditosKie > 0 || saldoKie != null) && (
-        <div className="ficha shrink-0 rotate-[-0.6deg] px-3 py-2 sm:px-4 sm:py-2.5">
-          <b className="block font-display text-[21px] font-black leading-none tabular-nums sm:text-[24px]">
-            {creditosKie}
-          </b>
-          <i className="mt-1.5 block font-mono text-[9.5px] font-bold not-italic uppercase tracking-[0.1em] text-grafito">
-            créd. Kie{saldoKie != null ? ` · saldo ${saldoKie}` : ""}
-          </i>
-        </div>
-      )}
     </div>
   );
 }

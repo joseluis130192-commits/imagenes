@@ -3,7 +3,7 @@ import RegistrarSW from "@/components/RegistrarSW";
 
 export const metadata = {
   title: "Taller de imágenes",
-  description: "Panel interno para generar imágenes con la API de OpenAI",
+  description: "Panel interno para generar imágenes con los modelos de Kie AI",
   manifest: "/manifest.webmanifest",
 };
 

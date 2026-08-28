@@ -1,5 +1,5 @@
 import { verTarea } from "@/lib/kie";
-import { guardarImagenDesdeBuffer } from "@/lib/openai";
+import { guardarImagenDesdeBuffer } from "@/lib/almacen";
 import { tamanoDesdeAspecto } from "@/lib/proveedores";
 
 export const dynamic = "force-dynamic";

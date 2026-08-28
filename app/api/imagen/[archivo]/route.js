@@ -1,6 +1,6 @@
 import path from "path";
 import { supabase } from "@/lib/supabase";
-import { claveObjeto } from "@/lib/openai";
+import { claveObjeto } from "@/lib/almacen";
 
 export const dynamic = "force-dynamic";
 

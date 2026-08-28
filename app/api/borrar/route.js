@@ -1,4 +1,4 @@
-import { borrarImagen } from "@/lib/openai";
+import { borrarImagen } from "@/lib/almacen";
 
 export const dynamic = "force-dynamic";
 

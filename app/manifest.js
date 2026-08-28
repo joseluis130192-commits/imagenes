@@ -2,7 +2,7 @@ export default function manifest() {
   return {
     name: "Taller de imágenes",
     short_name: "Taller",
-    description: "Genera y edita imágenes con la API de OpenAI",
+    description: "Genera y edita imágenes con los modelos de Kie AI",
     start_url: "/",
     display: "standalone",
     orientation: "portrait",

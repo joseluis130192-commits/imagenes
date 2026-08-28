@@ -1,4 +1,4 @@
-import { key } from "@/lib/openai";
+import { key } from "@/lib/kie";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;

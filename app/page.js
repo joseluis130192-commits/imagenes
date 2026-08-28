@@ -6,13 +6,12 @@ import Controles from "@/components/Controles";
 import Galeria from "@/components/Galeria";
 import Medidor from "@/components/Medidor";
 import Visor from "@/components/Visor";
-import { MODELOS_BASE, dolares, precioUnitario } from "@/lib/config";
-import { buscarModeloKie, esModeloKieCrudo } from "@/lib/proveedores";
+import { MODELOS_KIE, buscarModeloKie } from "@/lib/proveedores";
 
 const ESTADO_INICIAL = {
   modo: "generar",
   prompt: "",
-  modelo: "gpt-image-1-mini",
+  modelo: MODELOS_KIE.find((m) => m.generar)?.id || MODELOS_KIE[0].id,
   calidad: "medium",
   tamano: "1024x1024",
   cantidad: 1,
@@ -22,14 +21,13 @@ const ESTADO_INICIAL = {
 
 export default function Pagina() {
   const [estado, setEstado] = useState(ESTADO_INICIAL);
-  const [modelos, setModelos] = useState(MODELOS_BASE);
   const [archivos, setArchivos] = useState([]);
   const [historial, setHistorial] = useState([]);
   const [generando, setGenerando] = useState(false);
   const [pendientes, setPendientes] = useState(0);
   const [aviso, setAviso] = useState(null);
   const [hayKey, setHayKey] = useState(true);
-  const [presupuesto, setPresupuesto] = useState(2);
+  const [presupuesto, setPresupuesto] = useState(50);
   const [visor, setVisor] = useState(-1);
   const [creditosKie, setCreditosKie] = useState(0);
   const [saldoKie, setSaldoKie] = useState(null);
@@ -48,18 +46,8 @@ export default function Pagina() {
         if (!d.key) {
           setAviso({
             tipo: "ambar",
-            texto: "Falta la API key. Copiá .env.ejemplo a .env.local, pegá tu key en OPENAI_API_KEY y reiniciá el servidor.",
+            texto: "Falta la API key de Kie. Copiá .env.ejemplo a .env.local, pegá tu key en KIE_API_KEY y reiniciá el servidor.",
           });
-        }
-      })
-      .catch(() => {});
-
-    fetch("/api/modelos")
-      .then((r) => r.json())
-      .then((d) => {
-        if (d.modelos?.length) {
-          setModelos(d.modelos);
-          set({ modelo: d.modelos.find((m) => m.includes("mini")) || d.modelos[0] });
         }
       })
       .catch(() => {});
@@ -80,22 +68,16 @@ export default function Pagina() {
   }, [presupuesto]);
 
   /* -------------------------------------------------------------- gasto */
-  const { imagenesHoy, gastoHoy } = useMemo(() => {
+  // Los créditos reales solo se conocen cuando termina cada tarea (creditsConsumed no
+  // se guarda en la tabla), así que el gasto es de la sesión actual, no del día entero
+  // acumulado entre recargas: `imagenesHoy` sí puede salir del historial (tiene fecha).
+  const imagenesHoy = useMemo(() => {
     const hoy = new Date().toDateString();
-    const delDia = historial.filter((h) => new Date(h.fecha).toDateString() === hoy);
-    // Las filas de Kie no están en la tabla PRECIOS (esa es de OpenAI): se excluyen acá
-    // para no tarifarlas con precios que no les corresponden. Su costo se ve en créditos.
-    const delDiaOpenAI = delDia.filter((h) => !esModeloKieCrudo(h.modelo));
-    return {
-      imagenesHoy: delDia.length,
-      gastoHoy: delDiaOpenAI.reduce((suma, h) => suma + precioUnitario(h.modelo, h.calidad, h.tamano), 0),
-    };
+    return historial.filter((h) => new Date(h.fecha).toDateString() === hoy).length;
   }, [historial]);
 
-  const entradaKieActual = buscarModeloKie(estado.modelo);
-  const costoTanda = entradaKieActual
-    ? `${entradaKieActual.creditos} créd. Kie`
-    : dolares(precioUnitario(estado.modelo, estado.calidad, estado.tamano) * estado.cantidad);
+  const entradaKieActual = buscarModeloKie(estado.modelo) || MODELOS_KIE[0];
+  const costoTanda = `${entradaKieActual.creditos} créd.`;
 
   /* ------------------------------------------------------- tareas de Kie */
   // Kie no devuelve la imagen en la respuesta: solo un taskId. Hay que pollear
@@ -223,7 +205,12 @@ export default function Pagina() {
   };
 
   const reusar = (imagen) => {
-    set({ prompt: imagen.prompt, modelo: imagen.modelo, tamano: imagen.tamano });
+    // Imágenes viejas de OpenAI tienen en `modelo` un id que ya no existe en el
+    // registro (ej. "gpt-image-1-mini"): si no es un modelo de Kie válido, se reusa
+    // el prompt y el tamaño nomás, sin tocar el modelo elegido.
+    const cambios = { prompt: imagen.prompt, tamano: imagen.tamano };
+    if (buscarModeloKie(imagen.modelo)) cambios.modelo = imagen.modelo;
+    set(cambios);
     window.scrollTo({ top: 0, behavior: "smooth" });
     document.getElementById("prompt")?.focus();
   };
@@ -240,7 +227,7 @@ export default function Pagina() {
       <div className="sticky top-0 z-50 border-b-[3px] border-tinta bg-amarillo px-4 py-2 sm:-ml-[50px] sm:pl-[56px] lg:-ml-[70px] lg:pl-[76px]">
         <p className="font-mono text-[11px] font-bold uppercase tracking-[0.08em]">
           <span className={hayKey ? "text-tinta" : "text-rojo"}>●</span>{" "}
-          {hayKey ? "Conectado a la API de OpenAI" : "Sin API key configurada"}
+          {hayKey ? "Conectado a Kie AI" : "Sin API key configurada"}
           <span className="mx-2 hidden sm:inline">·</span>
           <span className="hidden sm:inline">Modelo: {estado.modelo}</span>
         </p>
@@ -257,10 +244,9 @@ export default function Pagina() {
         </div>
         <Medidor
           imagenesHoy={imagenesHoy}
-          gastoHoy={gastoHoy}
+          creditosGastados={creditosKie}
           presupuesto={presupuesto}
           onPresupuesto={setPresupuesto}
-          creditosKie={creditosKie}
           saldoKie={saldoKie}
         />
       </header>
@@ -270,7 +256,6 @@ export default function Pagina() {
           <Controles
             estado={estado}
             set={set}
-            modelos={modelos}
             archivos={archivos}
             setArchivos={setArchivos}
             onGenerar={generar}
