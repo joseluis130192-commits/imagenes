@@ -1,16 +1,20 @@
 import { verTarea } from "@/lib/kie";
 import { guardarImagenDesdeBuffer } from "@/lib/almacen";
-import { tamanoDesdeAspecto } from "@/lib/proveedores";
+import { tamanoDesdeAspecto, tipoDesdeModeloKie } from "@/lib/proveedores";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
+// Los resultados de video pesan mucho más que una imagen: la descarga desde Kie y la
+// resubida a Supabase pueden tardar más que el default de la ruta.
+export const maxDuration = 300;
 
 // Campos de `input` que llevan referencias: arrays de URLs (varias imágenes) o un
-// string (una sola, como en Recraft/Topaz/el segment-map de Grok). Sirven para saber
-// si la tarea partió de una imagen ("editada") o no ("generada"), y cuántas.
+// string (una sola, como en Recraft/Topaz/el segment-map de Grok, o el first_frame_url
+// de Seedance). Sirven para saber si la tarea partió de una imagen ("editada") o no
+// ("generada"), y cuántas.
 const CAMPOS_IMAGENES_ARRAY = ["input_urls", "image_urls", "image_input"];
-const CAMPOS_IMAGENES_STRING = ["image", "image_url"];
-const EXTENSIONES = ["png", "jpg", "jpeg", "webp"];
+const CAMPOS_IMAGENES_STRING = ["image", "image_url", "first_frame_url"];
+const EXTENSIONES = ["png", "jpg", "jpeg", "webp", "mp4", "webm"];
 
 /**
  * Se poll ea esta ruta cada 2 segundos con la misma URL (mismo taskId): sin este
@@ -102,6 +106,7 @@ export async function GET(_req, { params }) {
       tamano: tamanoDesdeAspecto(input.aspect_ratio),
       origen: tieneReferencias ? "editada" : "generada",
       referencias: campoArray ? input[campoArray].length : campoString ? 1 : null,
+      tipo: tipoDesdeModeloKie(r.modelo),
     });
   } catch (err) {
     return json({ estado: "error", mensaje: err.message, taskId }, { status: 500 });

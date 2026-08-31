@@ -1,14 +1,14 @@
 "use client";
 
 import { useEffect, useMemo, useRef } from "react";
-import { CALIDADES, ESTILOS, FONDOS, FORMATOS, TAMANOS } from "@/lib/config";
+import { ASPECTOS_VIDEO, CALIDADES, DURACIONES_VIDEO, ESTILOS, FONDOS, FORMATOS, RESOLUCIONES_VIDEO, TAMANOS } from "@/lib/config";
 import { MODELOS_KIE, buscarModeloKie } from "@/lib/proveedores";
 import Plegable from "@/components/Plegable";
 
 const CANTIDADES = [1, 2, 3, 4].map((n) => ({ valor: n, nombre: String(n) }));
 
-// El selector se agrupa por uso: "Realista", "Edición", "Económicos", "Retoque".
-const GRUPOS_ORDEN = ["Realista", "Edición", "Económicos", "Retoque"];
+// El selector se agrupa por uso: "Realista", "Edición", "Económicos", "Retoque", "Video".
+const GRUPOS_ORDEN = ["Realista", "Edición", "Económicos", "Retoque", "Video"];
 
 function Segmento({ opciones, valor, onCambio }) {
   return (
@@ -69,7 +69,9 @@ export default function Controles({ estado, set, archivos, setArchivos, onGenera
   // Fallback defensivo: si estado.modelo quedó con un id inválido (no debería pasar,
   // ver reusar() en page.js) mejor mostrar el primer modelo que romper el panel.
   const entradaKie = buscarModeloKie(estado.modelo) || MODELOS_KIE[0];
-  const controlesKie = entradaKie.controles;
+  const esVideo = entradaKie.tipo === "video";
+  const controlesKie = entradaKie.controles || {};
+  const controlesVideo = entradaKie.controlesVideo || {};
   const mostrarCalidad = controlesKie.calidad;
   const mostrarCantidad = controlesKie.cantidad;
   const mostrarFormato = controlesKie.formato;
@@ -79,20 +81,30 @@ export default function Controles({ estado, set, archivos, setArchivos, onGenera
     : FORMATOS;
 
   const tamanoCorto = TAMANOS.find((t) => t.valor === estado.tamano)?.corto || estado.tamano;
-  const resumenAjustes = `${entradaKie.nombre} · ${tamanoCorto} · ${entradaKie.creditos} créd.`;
+  const resumenAjustes = esVideo
+    ? `${entradaKie.nombre} · ${estado.duracion}s · ${entradaKie.creditos} créd.`
+    : `${entradaKie.nombre} · ${tamanoCorto} · ${entradaKie.creditos} créd.`;
 
   // Agrupado por uso: los modelos que no ofrecen el modo actual (ej. Z-Image no edita,
   // Recraft/Topaz/el segment-map de Grok no generan desde cero) directamente no aparecen.
+  // En modo "video" solo entran los modelos de tipo video, filtrados además por si el
+  // sub-modo activo es texto→video (generar) o imagen→video (editar).
   const grupos = useMemo(() => {
     const mapa = Object.fromEntries(GRUPOS_ORDEN.map((g) => [g, []]));
     MODELOS_KIE.forEach((m) => {
-      if (estado.modo === "generar" && !m.generar) return;
-      if (estado.modo === "editar" && !m.editar) return;
+      if (estado.modo === "video") {
+        if (m.tipo !== "video") return;
+        const capacidad = estado.modoVideo === "imagen" ? "editar" : "generar";
+        if (!m[capacidad]) return;
+      } else {
+        if (m.tipo !== "imagen") return;
+        if (!m[estado.modo]) return;
+      }
       const grupo = GRUPOS_ORDEN.includes(m.grupo) ? m.grupo : "Realista";
       mapa[grupo].push({ valor: m.id, etiqueta: m.nombre });
     });
     return mapa;
-  }, [estado.modo]);
+  }, [estado.modo, estado.modoVideo]);
 
   return (
     <div className="w-full min-w-0 space-y-4">
@@ -100,19 +112,43 @@ export default function Controles({ estado, set, archivos, setArchivos, onGenera
         opciones={[
           { valor: "generar", nombre: "Generar" },
           { valor: "editar", nombre: "Editar" },
+          { valor: "video", nombre: "Video" },
         ]}
         valor={estado.modo}
         onCambio={(v) => {
+          if (v === "video") {
+            const capacidad = estado.modoVideo === "imagen" ? "editar" : "generar";
+            const yaSirve = entradaKie.tipo === "video" && entradaKie[capacidad];
+            const alternativa = MODELOS_KIE.find((m) => m.tipo === "video" && m[capacidad])?.id;
+            set({ modo: v, modelo: yaSirve ? estado.modelo : alternativa || estado.modelo });
+            return;
+          }
           // Si el modelo elegido no ofrece el modo al que se cambia (Recraft/Topaz/el
-          // segment-map de Grok no generan; Z-Image/Seedream no editan), no puede quedar
-          // seleccionado ahí: se cae a otro modelo que sí lo ofrezca.
-          const sinSoporte = !entradaKie[v];
-          const alternativa = MODELOS_KIE.find((m) => m[v])?.id;
+          // segment-map de Grok no generan; Z-Image/Seedream no editan; los de video no
+          // aplican acá), no puede quedar seleccionado ahí: se cae a otro que sí lo ofrezca.
+          const sinSoporte = entradaKie.tipo !== "imagen" || !entradaKie[v];
+          const alternativa = MODELOS_KIE.find((m) => m.tipo === "imagen" && m[v])?.id;
           set(sinSoporte && alternativa ? { modo: v, modelo: alternativa } : { modo: v });
         }}
       />
 
-      {estado.modo === "editar" && (
+      {estado.modo === "video" && (
+        <Segmento
+          opciones={[
+            { valor: "texto", nombre: "Texto → Video" },
+            { valor: "imagen", nombre: "Imagen → Video" },
+          ]}
+          valor={estado.modoVideo}
+          onCambio={(v) => {
+            const capacidad = v === "imagen" ? "editar" : "generar";
+            const yaSirve = entradaKie.tipo === "video" && entradaKie[capacidad];
+            const alternativa = MODELOS_KIE.find((m) => m.tipo === "video" && m[capacidad])?.id;
+            set({ modoVideo: v, modelo: yaSirve ? estado.modelo : alternativa || estado.modelo });
+          }}
+        />
+      )}
+
+      {(estado.modo === "editar" || (estado.modo === "video" && estado.modoVideo === "imagen")) && (
         <div>
           <span className="etiqueta">Imágenes de referencia</span>
           <div className="flex flex-wrap gap-2.5">
@@ -174,7 +210,9 @@ export default function Controles({ estado, set, archivos, setArchivos, onGenera
             if ((e.metaKey || e.ctrlKey) && e.key === "Enter") onGenerar();
           }}
           placeholder={
-            estado.modo === "editar"
+            estado.modo === "video"
+              ? "Describí la escena: qué pasa, cómo se mueve la cámara, qué acción ocurre."
+              : estado.modo === "editar"
               ? "Sacá el fondo y dejá la figura sobre blanco."
               : "Describí la imagen: qué se ve, en qué estilo, con qué encuadre y qué colores."
           }
@@ -234,28 +272,73 @@ export default function Controles({ estado, set, archivos, setArchivos, onGenera
           )}
         </div>
 
-        {mostrarCalidad && (
-          <Grupo etiqueta="Calidad" opciones={CALIDADES} valor={estado.calidad} onCambio={(v) => set({ calidad: v })} columnas={4} />
-        )}
+        {esVideo ? (
+          <>
+            <Grupo
+              etiqueta="Duración"
+              opciones={DURACIONES_VIDEO.filter((d) => (controlesVideo.duracionesPermitidas || []).includes(d.valor))}
+              valor={estado.duracion}
+              onCambio={(v) => set({ duracion: v })}
+              columnas={4}
+            />
+            {controlesVideo.resolucionesPermitidas && (
+              <Grupo
+                etiqueta="Resolución"
+                opciones={RESOLUCIONES_VIDEO.filter((r) => controlesVideo.resolucionesPermitidas.includes(r.valor))}
+                valor={estado.resolucion}
+                onCambio={(v) => set({ resolucion: v })}
+                columnas={3}
+              />
+            )}
+            {controlesVideo.aspectosPermitidos && (
+              <Grupo
+                etiqueta="Aspecto"
+                opciones={ASPECTOS_VIDEO.filter((a) => controlesVideo.aspectosPermitidos.includes(a.valor))}
+                valor={estado.aspectoVideo}
+                onCambio={(v) => set({ aspectoVideo: v })}
+                columnas={3}
+              />
+            )}
+            {controlesVideo.sonido && (
+              <div>
+                <span className="etiqueta">Sonido</span>
+                <Segmento
+                  opciones={[
+                    { valor: true, nombre: "Con audio" },
+                    { valor: false, nombre: "Sin audio" },
+                  ]}
+                  valor={estado.sonido}
+                  onCambio={(v) => set({ sonido: v })}
+                />
+              </div>
+            )}
+          </>
+        ) : (
+          <>
+            {mostrarCalidad && (
+              <Grupo etiqueta="Calidad" opciones={CALIDADES} valor={estado.calidad} onCambio={(v) => set({ calidad: v })} columnas={4} />
+            )}
 
-        <Grupo etiqueta="Tamaño" opciones={TAMANOS} valor={estado.tamano} onCambio={(v) => set({ tamano: v })} columnas={4} />
+            <Grupo etiqueta="Tamaño" opciones={TAMANOS} valor={estado.tamano} onCambio={(v) => set({ tamano: v })} columnas={4} />
 
-        {mostrarCantidad && (
-          <Grupo etiqueta="Cantidad" opciones={CANTIDADES} valor={estado.cantidad} onCambio={(v) => set({ cantidad: v })} columnas={4} />
-        )}
+            {mostrarCantidad && (
+              <Grupo etiqueta="Cantidad" opciones={CANTIDADES} valor={estado.cantidad} onCambio={(v) => set({ cantidad: v })} columnas={4} />
+            )}
 
-        {mostrarFormato && (
-          <Grupo etiqueta="Formato" opciones={opcionesFormato} valor={estado.formato} onCambio={(v) => set({ formato: v })} columnas={3} />
-        )}
+            {mostrarFormato && (
+              <Grupo etiqueta="Formato" opciones={opcionesFormato} valor={estado.formato} onCambio={(v) => set({ formato: v })} columnas={3} />
+            )}
 
-        {estado.modo === "generar" && mostrarFondo && (
-          <Grupo etiqueta="Fondo" opciones={FONDOS} valor={estado.fondo} onCambio={(v) => set({ fondo: v })} columnas={3} />
+            {estado.modo === "generar" && mostrarFondo && (
+              <Grupo etiqueta="Fondo" opciones={FONDOS} valor={estado.fondo} onCambio={(v) => set({ fondo: v })} columnas={3} />
+            )}
+          </>
         )}
       </Plegable>
 
       <div className="hidden pt-1 lg:block">
         <button className="boton-fuerte" onClick={onGenerar} disabled={generando}>
-          {generando ? "Generando…" : estado.modo === "editar" ? "Aplicar cambios →" : "Generar →"}
+          {generando ? "Generando…" : estado.modo === "video" ? "Generar video →" : estado.modo === "editar" ? "Aplicar cambios →" : "Generar →"}
         </button>
         <p className="mt-3 text-center font-mono text-[11px] font-bold uppercase tracking-[0.06em] text-grafito">
           Esta tanda: <span className="marcador text-tinta">{costo}</span>

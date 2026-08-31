@@ -1,8 +1,10 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 
 export default function Visor({ imagen, onCerrar, onAnterior, onSiguiente }) {
+  const videoRef = useRef(null);
+
   useEffect(() => {
     const tecla = (e) => {
       if (e.key === "Escape") onCerrar();
@@ -32,6 +34,11 @@ export default function Visor({ imagen, onCerrar, onAnterior, onSiguiente }) {
       <div className="flex items-center justify-between gap-4 border-b-[3px] border-tinta bg-amarillo px-5 py-2.5">
         <p className="truncate font-mono text-[11px] font-bold uppercase tracking-[0.08em]">{imagen.archivo}</p>
         <div className="flex items-center gap-2">
+          {imagen.tipo === "video" && (
+            <button onClick={() => videoRef.current?.requestFullscreen?.()} className="boton px-3 py-1.5">
+              Pantalla completa
+            </button>
+          )}
           <button onClick={onAnterior} className="boton px-3 py-1.5" aria-label="Anterior">←</button>
           <button onClick={onSiguiente} className="boton px-3 py-1.5" aria-label="Siguiente">→</button>
           <a href={imagen.url} download={imagen.archivo} className="boton bg-lima px-3 py-1.5">Descargar</a>
@@ -40,12 +47,22 @@ export default function Visor({ imagen, onCerrar, onAnterior, onSiguiente }) {
       </div>
 
       <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
-        <div className="flex min-h-0 flex-1 items-center justify-center p-6" onClick={onCerrar}>
-          <img
-            src={imagen.url}
-            alt={imagen.prompt || ""}
-            className="max-h-full max-w-full border-[3px] border-tinta object-contain shadow-duroLg"
-          />
+        <div className="flex min-h-0 flex-1 items-center justify-center p-6" onClick={(e) => e.target === e.currentTarget && onCerrar()}>
+          {imagen.tipo === "video" ? (
+            <video
+              ref={videoRef}
+              src={imagen.url}
+              controls
+              autoPlay
+              className="max-h-full max-w-full border-[3px] border-tinta object-contain shadow-duroLg"
+            />
+          ) : (
+            <img
+              src={imagen.url}
+              alt={imagen.prompt || ""}
+              className="max-h-full max-w-full border-[3px] border-tinta object-contain shadow-duroLg"
+            />
+          )}
         </div>
 
         <aside className="w-full shrink-0 space-y-4 border-t-[3px] border-tinta bg-hoja p-5 lg:w-80 lg:overflow-y-auto lg:border-l-[3px] lg:border-t-0">

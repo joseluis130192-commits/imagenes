@@ -21,8 +21,16 @@ export async function POST(req) {
     return Response.json({ error: `${kie.nombre} no genera imágenes desde cero: solo edita una que ya tengas.` }, { status: 400 });
   }
 
+  // Solo se usa cuando kie.tipo === "video"; las entradas de imagen lo ignoran.
+  const video = {
+    duracion: cuerpo.duracion,
+    aspecto: cuerpo.aspectoVideo,
+    resolucion: cuerpo.resolucion,
+    sonido: cuerpo.sonido,
+  };
+
   // Kie no devuelve la imagen acá: solo el taskId. El frontend polea /api/tarea/[taskId].
-  const input = kie.generar.armarInput(prompt, cuerpo.tamano || "auto", [], cuerpo.formato, cuerpo.calidad);
+  const input = kie.generar.armarInput(prompt, cuerpo.tamano || "auto", [], cuerpo.formato, cuerpo.calidad, video);
   const r = await crearTarea(kie.generar.model, input);
   if (!r.ok) return Response.json({ error: r.mensaje }, { status: r.estado || 500 });
   return Response.json({ taskId: r.taskId, proveedor: "kie" }, { status: 202 });

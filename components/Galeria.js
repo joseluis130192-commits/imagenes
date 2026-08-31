@@ -1,6 +1,13 @@
 "use client";
 
+import { useMemo, useState } from "react";
 import { proporcionDe } from "@/lib/config";
+
+const FILTROS_TIPO = [
+  { valor: "todos", nombre: "Todos" },
+  { valor: "imagen", nombre: "Imágenes" },
+  { valor: "video", nombre: "Videos" },
+];
 
 /** Inclinación estable por imagen: la misma foto siempre queda pegada igual. */
 function inclinacion(id = "") {
@@ -33,7 +40,11 @@ function Tarjeta({ imagen, onAbrir, onReusar, onBorrar }) {
 
       <div className="relative">
         <button onClick={onAbrir} className="block w-full cursor-zoom-in border-2 border-tinta" aria-label="Ver en grande">
-          <img src={imagen.url} alt={imagen.prompt?.slice(0, 120) || ""} loading="lazy" className="block w-full bg-papel" />
+          {imagen.tipo === "video" ? (
+            <video src={imagen.url} className="block w-full bg-papel" muted playsInline preload="metadata" />
+          ) : (
+            <img src={imagen.url} alt={imagen.prompt?.slice(0, 120) || ""} loading="lazy" className="block w-full bg-papel" />
+          )}
         </button>
 
         <div className="pointer-events-none absolute inset-x-0 bottom-0 flex flex-wrap justify-end gap-1.5 p-2
@@ -65,6 +76,7 @@ function Tarjeta({ imagen, onAbrir, onReusar, onBorrar }) {
         <p className="font-mono text-[9px] font-bold uppercase leading-tight tracking-[0.04em] text-grafito sm:text-[10px]">
           {imagen.modelo} · {imagen.calidad} · {imagen.tamano}
           {imagen.origen === "editada" && <span className="marcador ml-1 text-tinta">editada</span>}
+          {imagen.tipo === "video" && <span className="marcador ml-1 text-tinta">video</span>}
         </p>
       </figcaption>
     </figure>
@@ -72,14 +84,31 @@ function Tarjeta({ imagen, onAbrir, onReusar, onBorrar }) {
 }
 
 export default function Galeria({ imagenes, pendientes, tamano, onAbrir, onReusar, onBorrar }) {
-  const vacia = !imagenes.length && !pendientes;
+  const [filtro, setFiltro] = useState("todos");
+  const filtradas = useMemo(
+    () => (filtro === "todos" ? imagenes : imagenes.filter((i) => (i.tipo || "imagen") === filtro)),
+    [imagenes, filtro]
+  );
+  const vacia = !filtradas.length && !pendientes;
 
   return (
     <>
-      <div className="mb-5 flex items-center gap-3">
+      <div className="mb-5 flex flex-wrap items-center gap-3">
         <span className="border-[2.5px] border-tinta bg-lima px-2.5 py-1 font-mono text-[10px] font-bold uppercase tracking-[0.1em] shadow-duroSm">
-          Resultados {imagenes.length > 0 && `· ${imagenes.length}`}
+          Resultados {filtradas.length > 0 && `· ${filtradas.length}`}
         </span>
+        <div className="flex gap-1.5">
+          {FILTROS_TIPO.map((f) => (
+            <button
+              key={f.valor}
+              onClick={() => setFiltro(f.valor)}
+              className={`border-2 border-tinta px-2 py-1 font-mono text-[9.5px] font-bold uppercase tracking-[0.06em]
+                ${filtro === f.valor ? "bg-lima" : "bg-hoja text-grafito hover:text-tinta"}`}
+            >
+              {f.nombre}
+            </button>
+          ))}
+        </div>
         <span className="h-[2px] flex-1 bg-tinta/15" />
       </div>
 
@@ -96,7 +125,7 @@ export default function Galeria({ imagenes, pendientes, tamano, onAbrir, onReusa
           {Array.from({ length: pendientes }).map((_, i) => (
             <Placa key={`placa-${i}`} proporcion={proporcionDe(tamano)} />
           ))}
-          {imagenes.map((img) => (
+          {filtradas.map((img) => (
             <Tarjeta
               key={img.id}
               imagen={img}

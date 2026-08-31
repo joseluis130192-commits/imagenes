@@ -11,12 +11,17 @@ import { MODELOS_KIE, buscarModeloKie } from "@/lib/proveedores";
 const ESTADO_INICIAL = {
   modo: "generar",
   prompt: "",
-  modelo: MODELOS_KIE.find((m) => m.generar)?.id || MODELOS_KIE[0].id,
+  modelo: MODELOS_KIE.find((m) => m.tipo === "imagen" && m.generar)?.id || MODELOS_KIE[0].id,
   calidad: "medium",
   tamano: "1024x1024",
   cantidad: 1,
   formato: "png",
   fondo: "auto",
+  modoVideo: "texto",
+  duracion: 5,
+  resolucion: "720p",
+  aspectoVideo: "16:9",
+  sonido: true,
 };
 
 export default function Pagina() {
@@ -83,10 +88,13 @@ export default function Pagina() {
   // Kie no devuelve la imagen en la respuesta: solo un taskId. Hay que pollear
   // hasta que la tarea termine. La mayoría termina en menos de 30s, pero el tope de
   // intentos cubre el caso de que se cuelgue del lado de ellos.
-  const pollearTareaKie = async (taskId) => {
+  const pollearTareaKie = async (taskId, tipo = "imagen") => {
     let ultimoEstado = "desconocido";
+    // Un video tarda mucho más que una imagen: 150 intentos de 2s son 5 minutos, contra
+    // los 3 minutos (90 intentos) que alcanzan para el resto de los modelos.
+    const maxIntentos = tipo === "video" ? 150 : 90;
 
-    for (let intento = 0; intento < 90; intento++) {
+    for (let intento = 0; intento < maxIntentos; intento++) {
       await new Promise((r) => setTimeout(r, 2000));
 
       let datos;
@@ -122,7 +130,7 @@ export default function Pagina() {
           setAviso(null);
           setGenerando(true);
           setPendientes(1);
-          pollearTareaKie(taskId).finally(() => {
+          pollearTareaKie(taskId, tipo).finally(() => {
             setGenerando(false);
             setPendientes(0);
           });
@@ -138,9 +146,19 @@ export default function Pagina() {
       setAviso({ tipo: "ambar", texto: "Escribí un prompt antes de generar." });
       return;
     }
-    if (estado.modo === "editar" && !archivos.length) {
-      setAviso({ tipo: "ambar", texto: "Subí al menos una imagen de referencia para editar." });
+    const usaImagenDeReferencia = estado.modo === "editar" || (estado.modo === "video" && estado.modoVideo === "imagen");
+    if (usaImagenDeReferencia && !archivos.length) {
+      setAviso({ tipo: "ambar", texto: "Subí al menos una imagen de referencia." });
       return;
+    }
+
+    // Los modelos de video cuestan entre 10 y 50 veces más que uno de imagen: se pide
+    // confirmación antes de dispararlo para que no salga por accidente.
+    if (estado.modo === "video") {
+      const confirmado = window.confirm(
+        `Vas a generar un video con ${entradaKieActual.nombre} (~${entradaKieActual.creditos} créditos estimados). ¿Continuar?`
+      );
+      if (!confirmado) return;
     }
 
     setAviso(null);
@@ -149,7 +167,7 @@ export default function Pagina() {
 
     try {
       let respuesta;
-      if (estado.modo === "editar") {
+      if (usaImagenDeReferencia) {
         const forma = new FormData();
         forma.append("prompt", estado.prompt);
         forma.append("modelo", estado.modelo);
@@ -157,6 +175,12 @@ export default function Pagina() {
         forma.append("tamano", estado.tamano);
         forma.append("formato", estado.formato);
         forma.append("cantidad", String(estado.cantidad));
+        if (estado.modo === "video") {
+          forma.append("duracion", String(estado.duracion));
+          forma.append("aspectoVideo", estado.aspectoVideo);
+          forma.append("resolucion", estado.resolucion);
+          forma.append("sonido", String(estado.sonido));
+        }
         archivos.forEach((a) => forma.append("imagenes", a));
         respuesta = await fetch("/api/editar", { method: "POST", body: forma });
       } else {
@@ -174,8 +198,8 @@ export default function Pagina() {
       }
 
       if (datos.proveedor === "kie") {
-        setPendientes(1); // cada tarea de Kie produce una sola imagen
-        await pollearTareaKie(datos.taskId);
+        setPendientes(1); // cada tarea de Kie produce una sola imagen (o video)
+        await pollearTareaKie(datos.taskId, entradaKieActual.tipo);
         return;
       }
 

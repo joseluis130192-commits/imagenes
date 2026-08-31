@@ -41,7 +41,15 @@ export async function POST(req) {
     urls.push(subida.url);
   }
 
-  const input = kie.editar.armarInput(prompt, tamano, urls, formato, calidad);
+  // Solo se usa cuando kie.tipo === "video"; las entradas de imagen lo ignoran.
+  const video = {
+    duracion: Number(entrada.get("duracion")) || undefined,
+    aspecto: (entrada.get("aspectoVideo") || "").toString() || undefined,
+    resolucion: (entrada.get("resolucion") || "").toString() || undefined,
+    sonido: entrada.get("sonido") !== "false",
+  };
+
+  const input = kie.editar.armarInput(prompt, tamano, urls, formato, calidad, video);
   const r = await crearTarea(kie.editar.model, input);
   if (!r.ok) return Response.json({ error: r.mensaje }, { status: r.estado || 500 });
   return Response.json({ taskId: r.taskId, proveedor: "kie" }, { status: 202 });
