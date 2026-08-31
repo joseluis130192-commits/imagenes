@@ -40,6 +40,7 @@ export async function POST(req) {
     if (!subida.ok) return Response.json({ error: subida.mensaje }, { status: 502 });
     urls.push(subida.url);
   }
+  console.log("editar: URLs de referencia listas para createTask", urls);
 
   // Solo se usa cuando kie.tipo === "video"; las entradas de imagen lo ignoran.
   const video = {
