@@ -1,6 +1,7 @@
 import { verTarea } from "@/lib/kie";
 import { guardarImagenDesdeBuffer } from "@/lib/almacen";
 import { tamanoDesdeAspecto, tipoDesdeModeloKie } from "@/lib/proveedores";
+import { VOCES } from "@/lib/config";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -14,7 +15,9 @@ export const maxDuration = 300;
 // ("generada"), y cuántas.
 const CAMPOS_IMAGENES_ARRAY = ["input_urls", "image_urls", "image_input"];
 const CAMPOS_IMAGENES_STRING = ["image", "image_url", "first_frame_url"];
-const EXTENSIONES = ["png", "jpg", "jpeg", "webp", "mp4", "webm"];
+const EXTENSIONES = ["png", "jpg", "jpeg", "webp", "mp4", "webm", "mp3", "wav"];
+// Si la URL de resultado no trae extensión, se cae a la típica de cada tipo.
+const FORMATO_POR_TIPO = { video: "mp4", audio: "mp3" };
 
 /**
  * Se poll ea esta ruta cada 2 segundos con la misma URL (mismo taskId): sin este
@@ -28,12 +31,36 @@ function json(datos, opciones = {}) {
   });
 }
 
-function formatoDesdeUrl(url, outputFormat) {
+function formatoDesdeUrl(url, outputFormat, tipo) {
   const limpio = (url || "").split("?")[0];
   const ext = limpio.split(".").pop()?.toLowerCase();
   if (EXTENSIONES.includes(ext)) return ext;
+  if (FORMATO_POR_TIPO[tipo]) return FORMATO_POR_TIPO[tipo];
   if (outputFormat) return outputFormat === "jpg" ? "jpg" : outputFormat;
   return "png";
+}
+
+/**
+ * Prompt, "calidad" y origen que se guardan en la ficha. Los modelos de lipsync traen
+ * `audio_url` (origen "hablada", y no cuentan como referencias de edición) y la voz
+ * guarda el texto como prompt y el nombre de la voz donde va la calidad.
+ */
+function fichaDesdeInput(input, tipo) {
+  if (tipo === "audio") {
+    const voz = VOCES.find((v) => v.id === input.voice)?.nombre.split(" · ")[0] || input.voice || "voz";
+    return { prompt: input.text || "", calidad: voz, origen: "generada", referencias: null };
+  }
+  if (input.audio_url) {
+    return { prompt: input.prompt || "", calidad: input.resolution || input.mode || "kie", origen: "hablada", referencias: null };
+  }
+  const campoArray = CAMPOS_IMAGENES_ARRAY.find((c) => Array.isArray(input[c]) && input[c].length);
+  const campoString = !campoArray && CAMPOS_IMAGENES_STRING.find((c) => typeof input[c] === "string" && input[c]);
+  return {
+    prompt: input.prompt || "",
+    calidad: input.resolution || "kie",
+    origen: campoArray || campoString ? "editada" : "generada",
+    referencias: campoArray ? input[campoArray].length : campoString ? 1 : null,
+  };
 }
 
 /**
@@ -75,7 +102,7 @@ export async function GET(_req, { params }) {
   const urlResultado = r.resultUrls?.[0];
   if (!urlResultado) {
     return json(
-      { estado: "error", mensaje: "Kie marcó la tarea como lista pero no devolvió ninguna imagen.", taskId }
+      { estado: "error", mensaje: "Kie marcó la tarea como lista pero no devolvió ningún resultado.", taskId }
     );
   }
 
@@ -92,21 +119,16 @@ export async function GET(_req, { params }) {
   }
 
   const input = r.param?.input || {};
-  const campoArray = CAMPOS_IMAGENES_ARRAY.find((c) => Array.isArray(input[c]) && input[c].length);
-  const campoString = !campoArray && CAMPOS_IMAGENES_STRING.find((c) => typeof input[c] === "string" && input[c]);
-  const tieneReferencias = Boolean(campoArray || campoString);
-  const formato = formatoDesdeUrl(urlResultado, input.output_format);
+  const tipo = tipoDesdeModeloKie(r.modelo);
+  const formato = formatoDesdeUrl(urlResultado, input.output_format, tipo);
 
   let ficha;
   try {
     ficha = await guardarImagenDesdeBuffer(buffer, formato, {
-      prompt: input.prompt || "",
+      ...fichaDesdeInput(input, tipo),
       modelo: r.modelo || "kie",
-      calidad: input.resolution || "kie",
       tamano: tamanoDesdeAspecto(input.aspect_ratio),
-      origen: tieneReferencias ? "editada" : "generada",
-      referencias: campoArray ? input[campoArray].length : campoString ? 1 : null,
-      tipo: tipoDesdeModeloKie(r.modelo),
+      tipo,
     });
   } catch (err) {
     return json({ estado: "error", mensaje: err.message, taskId }, { status: 500 });

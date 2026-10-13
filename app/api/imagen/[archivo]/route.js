@@ -3,7 +3,7 @@ import { supabase } from "@/lib/supabase";
 import { claveObjeto } from "@/lib/almacen";
 
 export const dynamic = "force-dynamic";
-// Los videos pesan mucho más que una imagen: bajarlos de Supabase puede tardar más
+// Los videos (y audios) pesan mucho más que una imagen: bajarlos de Supabase puede tardar más
 // que el default de la ruta.
 export const maxDuration = 300;
 
@@ -14,6 +14,8 @@ const TIPOS = {
   ".webp": "image/webp",
   ".mp4": "video/mp4",
   ".webm": "video/webm",
+  ".mp3": "audio/mpeg",
+  ".wav": "audio/wav",
 };
 
 /**

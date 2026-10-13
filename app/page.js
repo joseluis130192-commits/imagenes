@@ -4,9 +4,11 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import BarraAccion from "@/components/BarraAccion";
 import Controles from "@/components/Controles";
 import Galeria from "@/components/Galeria";
+import Hablar from "@/components/Hablar";
 import Medidor from "@/components/Medidor";
 import Visor from "@/components/Visor";
-import { MODELOS_KIE, buscarModeloKie } from "@/lib/proveedores";
+import { MODELOS_KIE, buscarModeloKie, creditosHablar } from "@/lib/proveedores";
+import { HABLAR_INICIAL, entradaDesdeFicha, subirEntrada, validarHablar } from "@/lib/hablar";
 
 const ESTADO_INICIAL = {
   modo: "generar",
@@ -36,6 +38,8 @@ export default function Pagina() {
   const [visor, setVisor] = useState(-1);
   const [creditosKie, setCreditosKie] = useState(0);
   const [saldoKie, setSaldoKie] = useState(null);
+  const [hablar, setHablar] = useState(HABLAR_INICIAL);
+  const [generandoVoz, setGenerandoVoz] = useState(false);
 
   const set = (parcial) => setEstado((e) => ({ ...e, ...parcial }));
 
@@ -82,17 +86,24 @@ export default function Pagina() {
   }, [historial]);
 
   const entradaKieActual = buscarModeloKie(estado.modelo) || MODELOS_KIE[0];
-  const costoTanda = `${entradaKieActual.creditos} créd.`;
+  // Los de lipsync cobran según el largo del audio: hasta que hay audio se muestra la tarifa.
+  const costoTanda = entradaKieActual.hablar
+    ? hablar.audio?.duracion != null
+      ? `~${creditosHablar(entradaKieActual, hablar.audio.duracion, hablar.resolucion)} créd.`
+      : `${creditosHablar(entradaKieActual, 1, hablar.resolucion)} créd./s`
+    : `${entradaKieActual.creditos} créd.`;
 
   /* ------------------------------------------------------- tareas de Kie */
   // Kie no devuelve la imagen en la respuesta: solo un taskId. Hay que pollear
   // hasta que la tarea termine. La mayoría termina en menos de 30s, pero el tope de
-  // intentos cubre el caso de que se cuelgue del lado de ellos.
+  // intentos cubre el caso de que se cuelgue del lado de ellos. Devuelve la ficha
+  // guardada (o nada si falló), para que "Hablar" pueda usar la voz recién generada.
   const pollearTareaKie = async (taskId, tipo = "imagen") => {
     let ultimoEstado = "desconocido";
     // Un video tarda mucho más que una imagen: 150 intentos de 2s son 5 minutos, contra
-    // los 3 minutos (90 intentos) que alcanzan para el resto de los modelos.
-    const maxIntentos = tipo === "video" ? 150 : 90;
+    // los 3 minutos (90 intentos) que alcanzan para el resto de los modelos. El lipsync
+    // es todavía más lento (Infinitalk y Kling Avatar pueden pasar los 5 minutos): 10.
+    const maxIntentos = { hablar: 300, video: 150 }[tipo] || 90;
 
     for (let intento = 0; intento < maxIntentos; intento++) {
       await new Promise((r) => setTimeout(r, 2000));
@@ -110,7 +121,7 @@ export default function Pagina() {
         if (typeof datos.imagen?.creditosConsumidos === "number") {
           setCreditosKie((c) => c + datos.imagen.creditosConsumidos);
         }
-        return;
+        return datos.imagen;
       }
       if (datos.estado === "error") {
         setAviso({ tipo: "error", texto: `${datos.mensaje} (tarea ${taskId})` });
@@ -139,9 +150,88 @@ export default function Pagina() {
     });
   };
 
+  /* ------------------------------------------------------------- hablar */
+  const generarVoz = async () => {
+    if (generandoVoz) return;
+    const texto = hablar.texto.trim();
+    if (!texto) {
+      setAviso({ tipo: "ambar", texto: "Escribí el texto que tiene que decir la voz." });
+      return;
+    }
+
+    setAviso(null);
+    setGenerandoVoz(true);
+    try {
+      const respuesta = await fetch("/api/voz", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ texto, voz: hablar.voz, velocidad: hablar.velocidad }),
+      });
+      const datos = await respuesta.json();
+      if (!respuesta.ok) {
+        setAviso({ tipo: "error", texto: datos.error || "Kie rechazó el pedido de voz." });
+        return;
+      }
+      // La voz queda en la galería (tipo "audio") y además cargada en el paso 2, lista para escuchar.
+      const ficha = await pollearTareaKie(datos.taskId, "audio");
+      if (ficha) setHablar((h) => ({ ...h, audio: entradaDesdeFicha(ficha) }));
+    } catch {
+      setAviso({ tipo: "error", texto: "No se pudo hablar con el servidor. ¿Sigue corriendo npm run dev?" });
+    } finally {
+      setGenerandoVoz(false);
+    }
+  };
+
+  const generarHablado = async () => {
+    const problema = validarHablar(entradaKieActual, hablar);
+    if (problema) {
+      setAviso({ tipo: "ambar", texto: problema });
+      return;
+    }
+
+    // Igual que en video: es caro, así que se confirma antes de dispararlo.
+    const segundos = hablar.audio.duracion;
+    const estimado =
+      segundos != null
+        ? `~${creditosHablar(entradaKieActual, segundos, hablar.resolucion)} créditos estimados para ${segundos.toFixed(1)}s de audio`
+        : `~${creditosHablar(entradaKieActual, 1, hablar.resolucion)} créditos estimados por segundo de audio`;
+    if (!window.confirm(`Vas a generar un video hablado con ${entradaKieActual.nombre} (${estimado}). ¿Continuar?`)) return;
+
+    setAviso(null);
+    setGenerando(true);
+    setPendientes(1);
+    try {
+      const [base, audio] = await Promise.all([subirEntrada(hablar.base), subirEntrada(hablar.audio)]);
+      const respuesta = await fetch("/api/hablar", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          modelo: entradaKieActual.id,
+          prompt: estado.prompt,
+          base,
+          audio,
+          resolucion: hablar.resolucion,
+          modo: hablar.modo,
+        }),
+      });
+      const datos = await respuesta.json();
+      if (!respuesta.ok) {
+        setAviso({ tipo: "error", texto: datos.error || "Kie rechazó el pedido." });
+        return;
+      }
+      await pollearTareaKie(datos.taskId, "hablar");
+    } catch (err) {
+      setAviso({ tipo: "error", texto: err.message || "No se pudo hablar con el servidor." });
+    } finally {
+      setGenerando(false);
+      setPendientes(0);
+    }
+  };
+
   /* ------------------------------------------------------------ generar */
   const generar = async () => {
     if (generando) return;
+    if (estado.modo === "hablar") return generarHablado();
     if (!estado.prompt.trim()) {
       setAviso({ tipo: "ambar", texto: "Escribí un prompt antes de generar." });
       return;
@@ -229,6 +319,15 @@ export default function Pagina() {
   };
 
   const reusar = (imagen) => {
+    // Un audio de la galería se reusa como audio del paso 2 de "Hablar".
+    if (imagen.tipo === "audio") {
+      const enHablar = buscarModeloKie(estado.modelo)?.hablar;
+      set({ modo: "hablar", modelo: enHablar ? estado.modelo : MODELOS_KIE.find((m) => m.hablar).id });
+      setHablar((h) => ({ ...h, audio: entradaDesdeFicha(imagen), fuenteAudio: "archivo" }));
+      window.scrollTo({ top: 0, behavior: "smooth" });
+      return;
+    }
+
     // Imágenes viejas de OpenAI tienen en `modelo` un id que ya no existe en el
     // registro (ej. "gpt-image-1-mini"): si no es un modelo de Kie válido, se reusa
     // el prompt y el tamaño nomás, sin tocar el modelo elegido.
@@ -285,6 +384,20 @@ export default function Pagina() {
             onGenerar={generar}
             generando={generando}
             costo={costoTanda}
+            panelHablar={
+              <Hablar
+                estado={estado}
+                set={set}
+                hablar={hablar}
+                setHablar={setHablar}
+                historial={historial}
+                onGenerar={generar}
+                generando={generando}
+                onGenerarVoz={generarVoz}
+                generandoVoz={generandoVoz}
+                costo={costoTanda}
+              />
+            }
           />
         </section>
 

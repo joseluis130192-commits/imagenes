@@ -8,7 +8,7 @@ export default function BarraAccion({ modo, generando, costo, onGenerar }) {
         <b className="marcador block font-display text-[16px] font-black leading-none text-tinta">{costo}</b>
       </div>
       <button className="boton-fuerte flex-1" onClick={onGenerar} disabled={generando}>
-        {generando ? "Generando…" : modo === "editar" ? "Aplicar cambios →" : "Generar →"}
+        {generando ? "Generando…" : modo === "editar" ? "Aplicar cambios →" : modo === "hablar" ? "Hacer hablar →" : "Generar →"}
       </button>
     </div>
   );

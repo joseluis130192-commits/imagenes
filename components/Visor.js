@@ -48,7 +48,12 @@ export default function Visor({ imagen, onCerrar, onAnterior, onSiguiente }) {
 
       <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
         <div className="flex min-h-0 flex-1 items-center justify-center p-6" onClick={(e) => e.target === e.currentTarget && onCerrar()}>
-          {imagen.tipo === "video" ? (
+          {imagen.tipo === "audio" ? (
+            <div className="w-full max-w-md border-[3px] border-tinta bg-amarillo/50 p-6 text-center shadow-duroLg">
+              <p className="mb-4 font-display text-[64px] font-black leading-none">♪</p>
+              <audio src={imagen.url} controls autoPlay className="w-full" />
+            </div>
+          ) : imagen.tipo === "video" ? (
             <video
               ref={videoRef}
               src={imagen.url}
@@ -83,7 +88,7 @@ export default function Visor({ imagen, onCerrar, onAnterior, onSiguiente }) {
               ["Modelo", imagen.modelo],
               ["Calidad", imagen.calidad],
               ["Tamaño", imagen.tamano],
-              ["Origen", imagen.origen === "editada" ? "edición" : "generación"],
+              ["Origen", { editada: "edición", hablada: "lipsync" }[imagen.origen] || "generación"],
               ["Fecha", fecha],
             ].map(([k, v]) => (
               <div key={k} className="flex justify-between gap-3">

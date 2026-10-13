@@ -7,6 +7,7 @@ const FILTROS_TIPO = [
   { valor: "todos", nombre: "Todos" },
   { valor: "imagen", nombre: "Imágenes" },
   { valor: "video", nombre: "Videos" },
+  { valor: "audio", nombre: "Audios" },
 ];
 
 /** Inclinación estable por imagen: la misma foto siempre queda pegada igual. */
@@ -40,7 +41,12 @@ function Tarjeta({ imagen, onAbrir, onReusar, onBorrar }) {
 
       <div className="relative">
         <button onClick={onAbrir} className="block w-full cursor-zoom-in border-2 border-tinta" aria-label="Ver en grande">
-          {imagen.tipo === "video" ? (
+          {imagen.tipo === "audio" ? (
+            // Un audio no tiene miniatura: una placa con la nota, y el reproductor va abajo.
+            <div className="grid aspect-[3/2] w-full place-items-center bg-amarillo/50">
+              <span className="font-display text-[44px] font-black leading-none">♪</span>
+            </div>
+          ) : imagen.tipo === "video" ? (
             <video src={imagen.url} className="block w-full bg-papel" muted playsInline preload="metadata" />
           ) : (
             <img src={imagen.url} alt={imagen.prompt?.slice(0, 120) || ""} loading="lazy" className="block w-full bg-papel" />
@@ -60,7 +66,7 @@ function Tarjeta({ imagen, onAbrir, onReusar, onBorrar }) {
             onClick={onReusar}
             className="pointer-events-auto border-2 border-tinta bg-hoja px-2.5 py-1 font-mono text-[10px] font-bold uppercase"
           >
-            Reusar
+            {imagen.tipo === "audio" ? "Usar en Hablar" : "Reusar"}
           </button>
           <button
             onClick={onBorrar}
@@ -72,11 +78,14 @@ function Tarjeta({ imagen, onAbrir, onReusar, onBorrar }) {
       </div>
 
       <figcaption className="mt-2.5 space-y-1.5">
+        {imagen.tipo === "audio" && <audio src={imagen.url} controls preload="none" className="h-9 w-full" />}
         <p className="line-clamp-2 text-[11.5px] font-medium leading-snug sm:text-[13px]">{imagen.prompt}</p>
         <p className="font-mono text-[9px] font-bold uppercase leading-tight tracking-[0.04em] text-grafito sm:text-[10px]">
           {imagen.modelo} · {imagen.calidad} · {imagen.tamano}
           {imagen.origen === "editada" && <span className="marcador ml-1 text-tinta">editada</span>}
+          {imagen.origen === "hablada" && <span className="marcador ml-1 text-tinta">lipsync</span>}
           {imagen.tipo === "video" && <span className="marcador ml-1 text-tinta">video</span>}
+          {imagen.tipo === "audio" && <span className="marcador ml-1 text-tinta">audio</span>}
         </p>
       </figcaption>
     </figure>

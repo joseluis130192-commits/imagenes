@@ -28,6 +28,16 @@ ver [Supabase](#dónde-se-guardan-las-imágenes-supabase).
   el cambio. Algunos modelos (Recraft, Topaz, el segment-map de Grok) solo sirven para
   editar, así que no aparecen en el selector cuando el modo es "Generar" — y al revés,
   los que solo generan no aparecen en "Editar".
+- **Hablar** (lipsync): tres pasos en una pantalla. ① La base: una imagen (Infinitalk,
+  Kling Avatar Standard/Pro) o un video (Volcengine), elegida de la galería o subida de
+  la compu; el modelo decide cuál pide (`base` en el registro). ② El audio: un mp3/wav
+  de la compu, una voz ya generada, o un texto que se convierte en voz con ElevenLabs
+  (queda en la galería con `tipo` = `audio` y se puede escuchar antes de usarla).
+  ③ Gestos/cámara y confirmación del costo estimado según el largo del audio.
+  Subidas: lo que pesa hasta 4MB va por la File Upload API de Kie (`/api/subir`); lo
+  más pesado (videos base) va directo del navegador al bucket con una URL firmada
+  (`/api/subir/firmar`), porque Vercel no deja pasar cuerpos de más de ~4.5MB. Lo que
+  ya está en el bucket se le pasa a Kie con una URL firmada de una hora.
 - **Estilos**: chips que agregan una coletilla al prompt. Están en `lib/config.js`, en
   `ESTILOS`, y se editan sin tocar nada más.
 - **Historial**: todo lo generado queda en Supabase y aparece al recargar. Cada imagen
@@ -45,6 +55,9 @@ ver [Supabase](#dónde-se-guardan-las-imágenes-supabase).
 ```
 app/api/generar        crea una tarea en Kie para generar desde cero
 app/api/editar          sube las referencias y crea una tarea en Kie para editar
+app/api/hablar          crea una tarea de lipsync (firma lo que venga del bucket)
+app/api/voz             crea una tarea de texto→voz con ElevenLabs
+app/api/subir           sube un archivo chico a Kie; /firmar da una URL de subida directa al bucket
 app/api/tarea/[taskId] pollea una tarea de Kie; cuando termina, baja y guarda la imagen
 app/api/kie/creditos   saldo de la cuenta de Kie, para el medidor
 app/api/imagen          sirve las imágenes descargándolas del bucket privado
