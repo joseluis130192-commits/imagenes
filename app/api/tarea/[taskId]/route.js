@@ -13,7 +13,7 @@ export const maxDuration = 300;
 // string (una sola, como en Recraft/Topaz/el segment-map de Grok, o el first_frame_url
 // de Seedance). Sirven para saber si la tarea partió de una imagen ("editada") o no
 // ("generada"), y cuántas.
-const CAMPOS_IMAGENES_ARRAY = ["input_urls", "image_urls", "image_input"];
+const CAMPOS_IMAGENES_ARRAY = ["input_urls", "image_urls", "image_input", "reference_image_urls"];
 const CAMPOS_IMAGENES_STRING = ["image", "image_url", "first_frame_url"];
 const EXTENSIONES = ["png", "jpg", "jpeg", "webp", "mp4", "webm", "mp3", "wav"];
 // Si la URL de resultado no trae extensión, se cae a la típica de cada tipo.
