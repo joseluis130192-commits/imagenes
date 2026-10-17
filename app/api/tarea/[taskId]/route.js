@@ -50,6 +50,9 @@ function fichaDesdeInput(input, tipo) {
     const voz = VOCES.find((v) => v.id === input.voice)?.nombre.split(" · ")[0] || input.voice || "voz";
     return { prompt: input.text || "", calidad: voz, origen: "generada", referencias: null };
   }
+  if (input.first_frame_image_url && input.last_frame_image_url) {
+    return { prompt: input.prompt || "", calidad: input.quality || "kie", origen: "secuencia", referencias: 2 };
+  }
   if (input.audio_url) {
     return { prompt: input.prompt || "", calidad: input.resolution || input.mode || "kie", origen: "hablada", referencias: null };
   }
@@ -69,7 +72,19 @@ function fichaDesdeInput(input, tipo) {
  * y la subimos a Supabase de una — esas URLs de Kie expiran, así que nunca se guardan
  * en la tabla.
  */
-export async function GET(_req, { params }) {
+/**
+ * Los clips de una secuencia mandan `?secuencia=<id>&orden=<n>` al pollear: Kie no
+ * guarda datos nuestros, así que es la única forma de que el clip quede agrupado.
+ */
+function secuenciaDesdeUrl(req) {
+  const q = new URL(req.url).searchParams;
+  const id = q.get("secuencia") || "";
+  const orden = Number(q.get("orden"));
+  if (!/^sec-[\w-]{1,40}$/.test(id) || !Number.isInteger(orden) || orden < 1 || orden > 7) return {};
+  return { secuenciaId: id, secuenciaOrden: orden };
+}
+
+export async function GET(req, { params }) {
   const taskId = params.taskId;
   if (!taskId) return json({ estado: "error", mensaje: "Falta el taskId." }, { status: 400 });
 
@@ -129,6 +144,7 @@ export async function GET(_req, { params }) {
       modelo: r.modelo || "kie",
       tamano: tamanoDesdeAspecto(input.aspect_ratio),
       tipo,
+      ...secuenciaDesdeUrl(req),
     });
   } catch (err) {
     return json({ estado: "error", mensaje: err.message, taskId }, { status: 500 });

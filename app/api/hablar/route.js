@@ -1,21 +1,10 @@
 import { crearTarea } from "@/lib/kie";
-import { firmarLectura } from "@/lib/almacen";
+import { urlParaKie } from "@/lib/almacen";
 import { buscarModeloKie } from "@/lib/proveedores";
 
 export const dynamic = "force-dynamic";
 
 const PROMPT_POR_DEFECTO = "La persona habla a cámara con expresiones naturales y movimientos suaves de cabeza.";
-
-/**
- * Cada entrada (base o audio) llega como `{ url }` si ya se subió a Kie, o como
- * `{ archivo }` si está en nuestro bucket (de la galería, una voz generada o una subida
- * grande): en ese caso se firma una URL temporal para que Kie la pueda bajar.
- */
-async function resolver(entrada) {
-  if (entrada?.url && /^https:\/\//.test(entrada.url)) return entrada.url;
-  if (entrada?.archivo) return firmarLectura(entrada.archivo);
-  return null;
-}
 
 export async function POST(req) {
   const cuerpo = await req.json().catch(() => null);
@@ -26,8 +15,8 @@ export async function POST(req) {
 
   let urlBase, urlAudio;
   try {
-    urlBase = await resolver(cuerpo.base);
-    urlAudio = await resolver(cuerpo.audio);
+    urlBase = await urlParaKie(cuerpo.base);
+    urlAudio = await urlParaKie(cuerpo.audio);
   } catch (err) {
     return Response.json({ error: err.message }, { status: 500 });
   }

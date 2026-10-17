@@ -10,9 +10,9 @@ const CANTIDADES = [1, 2, 3, 4].map((n) => ({ valor: n, nombre: String(n) }));
 // El selector se agrupa por uso: "Realista", "Edición", "Económicos", "Retoque", "Video".
 const GRUPOS_ORDEN = ["Realista", "Edición", "Económicos", "Retoque", "Video"];
 
-export function Segmento({ opciones, valor, onCambio }) {
+export function Segmento({ opciones, valor, onCambio, columnas = 2 }) {
   return (
-    <div className="grid grid-cols-2 gap-2">
+    <div className={`grid ${columnas === 3 ? "grid-cols-3" : "grid-cols-2"} gap-2`}>
       {opciones.map((o) => (
         <button
           key={o.valor}
@@ -54,7 +54,7 @@ export function Grupo({ opciones, valor, onCambio, columnas = 4, etiqueta }) {
   );
 }
 
-export default function Controles({ estado, set, archivos, setArchivos, onGenerar, generando, costo, panelHablar }) {
+export default function Controles({ estado, set, archivos, setArchivos, onGenerar, generando, costo, panelHablar, panelSecuencia }) {
   const inputArchivos = useRef(null);
 
   // Una URL por archivo, liberada al cambiar la lista: evita que se acumulen en memoria.
@@ -114,9 +114,16 @@ export default function Controles({ estado, set, archivos, setArchivos, onGenera
           { valor: "editar", nombre: "Editar" },
           { valor: "video", nombre: "Video" },
           { valor: "hablar", nombre: "Hablar" },
+          { valor: "secuencia", nombre: "Secuencia" },
         ]}
+        columnas={3}
         valor={estado.modo}
         onCambio={(v) => {
+          // Secuencia usa siempre PixVerse: no hay modelo para elegir.
+          if (v === "secuencia") {
+            set({ modo: v, modelo: "kie-pixverse-transition" });
+            return;
+          }
           if (v === "hablar") {
             const alternativa = MODELOS_KIE.find((m) => m.hablar)?.id;
             set({ modo: v, modelo: entradaKie.hablar ? estado.modelo : alternativa });
@@ -138,8 +145,9 @@ export default function Controles({ estado, set, archivos, setArchivos, onGenera
         }}
       />
 
-      {/* "Hablar" tiene su propio formulario de tres pasos (components/Hablar.js). */}
+      {/* "Hablar" y "Secuencia" tienen formularios propios (components/Hablar.js y Secuencia.js). */}
       {estado.modo === "hablar" && panelHablar}
+      {estado.modo === "secuencia" && panelSecuencia}
 
       {estado.modo === "video" && (
         <Segmento
@@ -157,7 +165,7 @@ export default function Controles({ estado, set, archivos, setArchivos, onGenera
         />
       )}
 
-      {estado.modo !== "hablar" && (
+      {estado.modo !== "hablar" && estado.modo !== "secuencia" && (
         <>
           {(estado.modo === "editar" || (estado.modo === "video" && estado.modoVideo === "imagen")) && (
             <div>

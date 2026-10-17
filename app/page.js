@@ -5,10 +5,12 @@ import BarraAccion from "@/components/BarraAccion";
 import Controles from "@/components/Controles";
 import Galeria from "@/components/Galeria";
 import Hablar from "@/components/Hablar";
+import Secuencia from "@/components/Secuencia";
 import Medidor from "@/components/Medidor";
 import Visor from "@/components/Visor";
 import { MODELOS_KIE, buscarModeloKie, creditosHablar } from "@/lib/proveedores";
 import { HABLAR_INICIAL, entradaDesdeFicha, subirEntrada, validarHablar } from "@/lib/hablar";
+import { SECUENCIA_INICIAL, nuevoIdSecuencia, resumenSecuencia, validarSecuencia } from "@/lib/secuencia";
 
 const ESTADO_INICIAL = {
   modo: "generar",
@@ -40,6 +42,9 @@ export default function Pagina() {
   const [saldoKie, setSaldoKie] = useState(null);
   const [hablar, setHablar] = useState(HABLAR_INICIAL);
   const [generandoVoz, setGenerandoVoz] = useState(false);
+  const [secuencia, setSecuencia] = useState(SECUENCIA_INICIAL);
+  // La última secuencia lanzada: su id, las imágenes ya subidas y el estado de cada par.
+  const [corrida, setCorrida] = useState(null);
 
   const set = (parcial) => setEstado((e) => ({ ...e, ...parcial }));
 
@@ -87,7 +92,9 @@ export default function Pagina() {
 
   const entradaKieActual = buscarModeloKie(estado.modelo) || MODELOS_KIE[0];
   // Los de lipsync cobran según el largo del audio: hasta que hay audio se muestra la tarifa.
-  const costoTanda = entradaKieActual.hablar
+  const costoTanda = entradaKieActual.secuencia
+    ? `~${resumenSecuencia(entradaKieActual, secuencia).total} créd.`
+    : entradaKieActual.hablar
     ? hablar.audio?.duracion != null
       ? `~${creditosHablar(entradaKieActual, hablar.audio.duracion, hablar.resolucion)} créd.`
       : `${creditosHablar(entradaKieActual, 1, hablar.resolucion)} créd./s`
@@ -96,9 +103,13 @@ export default function Pagina() {
   /* ------------------------------------------------------- tareas de Kie */
   // Kie no devuelve la imagen en la respuesta: solo un taskId. Hay que pollear
   // hasta que la tarea termine. La mayoría termina en menos de 30s, pero el tope de
-  // intentos cubre el caso de que se cuelgue del lado de ellos. Devuelve la ficha
-  // guardada (o nada si falló), para que "Hablar" pueda usar la voz recién generada.
-  const pollearTareaKie = async (taskId, tipo = "imagen") => {
+  // intentos cubre el caso de que se cuelgue del lado de ellos. pollearTareaKie devuelve
+  // la ficha guardada (o nada si falló), para que "Hablar" pueda usar la voz recién generada.
+  //
+  // `esperarTarea` solo espera y devuelve qué pasó; `pollearTareaKie` además muestra el
+  // aviso. La secuencia usa la primera directo, porque cada clip tiene su propio estado.
+  // `consulta` viaja tal cual a /api/tarea (la secuencia manda su id y el orden del clip).
+  const esperarTarea = async (taskId, tipo = "imagen", consulta = "") => {
     let ultimoEstado = "desconocido";
     // Un video tarda mucho más que una imagen: 150 intentos de 2s son 5 minutos, contra
     // los 3 minutos (90 intentos) que alcanzan para el resto de los modelos. El lipsync
@@ -110,7 +121,7 @@ export default function Pagina() {
 
       let datos;
       try {
-        const resp = await fetch(`/api/tarea/${taskId}`);
+        const resp = await fetch(`/api/tarea/${taskId}${consulta}`);
         datos = await resp.json();
       } catch {
         continue; // fallo de red puntual al pollear: seguimos intentando
@@ -121,20 +132,27 @@ export default function Pagina() {
         if (typeof datos.imagen?.creditosConsumidos === "number") {
           setCreditosKie((c) => c + datos.imagen.creditosConsumidos);
         }
-        return datos.imagen;
+        return { estado: "listo", ficha: datos.imagen };
       }
-      if (datos.estado === "error") {
-        setAviso({ tipo: "error", texto: `${datos.mensaje} (tarea ${taskId})` });
-        return;
-      }
+      if (datos.estado === "error") return { estado: "error", mensaje: `${datos.mensaje} (tarea ${taskId})` };
       ultimoEstado = datos.ultimoEstado || ultimoEstado;
     }
 
-    // Se agotaron los intentos, pero la tarea puede haber terminado del lado de Kie
-    // igual (por eso el botón: no hay que perderla, alcanza con volver a consultar).
+    // Se agotaron los intentos, pero la tarea puede haber terminado del lado de Kie igual:
+    // no hay que perderla, alcanza con volver a consultar el mismo taskId.
+    return { estado: "demorado", ultimoEstado };
+  };
+
+  const pollearTareaKie = async (taskId, tipo = "imagen") => {
+    const r = await esperarTarea(taskId, tipo);
+    if (r.estado === "listo") return r.ficha;
+    if (r.estado === "error") {
+      setAviso({ tipo: "error", texto: r.mensaje });
+      return;
+    }
     setAviso({
       tipo: "error",
-      texto: `Kie está tardando más de lo esperado (último estado: "${ultimoEstado}"). La tarea puede seguir corriendo del lado de ellos — taskId: ${taskId}.`,
+      texto: `Kie está tardando más de lo esperado (último estado: "${r.ultimoEstado}"). La tarea puede seguir corriendo del lado de ellos — taskId: ${taskId}.`,
       accion: {
         etiqueta: "Reintentar",
         onClick: () => {
@@ -228,10 +246,98 @@ export default function Pagina() {
     }
   };
 
+  /* ---------------------------------------------------------- secuencia */
+  const marcarPar = (i, cambios) =>
+    setCorrida((c) => c && { ...c, pares: c.pares.map((p, j) => (j === i ? { ...p, ...cambios } : p)) });
+
+  // Espera un clip ya lanzado. Nunca tira abajo la secuencia: solo marca el par.
+  const esperarPar = async (c, i, taskId) => {
+    marcarPar(i, { estado: "generando", mensaje: "", taskId });
+    const r = await esperarTarea(taskId, "video", `?secuencia=${c.id}&orden=${i + 1}`);
+    if (r.estado === "listo") marcarPar(i, { estado: "listo" });
+    else if (r.estado === "error") marcarPar(i, { estado: "error", mensaje: r.mensaje });
+    else marcarPar(i, { estado: "demorado", mensaje: `Kie sigue en "${r.ultimoEstado}". Puede terminar igual: consultá de nuevo.` });
+  };
+
+  // Lanza el clip del par i (imagen i+1 → imagen i+2) y lo espera.
+  const correrPar = async (c, i) => {
+    marcarPar(i, { estado: "generando", mensaje: "" });
+    try {
+      const respuesta = await fetch("/api/secuencia", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...c.ajustes, primera: c.entradas[i], ultima: c.entradas[i + 1] }),
+      });
+      const datos = await respuesta.json();
+      if (!respuesta.ok) return marcarPar(i, { estado: "error", mensaje: datos.error || "Kie rechazó el pedido." });
+      await esperarPar(c, i, datos.taskId);
+    } catch {
+      marcarPar(i, { estado: "error", mensaje: "No se pudo hablar con el servidor." });
+    }
+  };
+
+  const generarSecuencia = async () => {
+    const problema = validarSecuencia(entradaKieActual, secuencia);
+    if (problema) {
+      setAviso({ tipo: "ambar", texto: problema });
+      return;
+    }
+
+    const { clips, total } = resumenSecuencia(entradaKieActual, secuencia);
+    const pares = Array.from({ length: clips }, (_, i) => `${i + 1}→${i + 2}`).join(", ");
+    const ok = window.confirm(
+      `Vas a generar ${clips} ${clips === 1 ? "clip" : "clips"} de ${secuencia.duracion}s en ${secuencia.calidad} (${pares}), ` +
+        `~${total} créditos estimados en total. Se lanzan de a uno. ¿Continuar?`
+    );
+    if (!ok) return;
+
+    setAviso(null);
+    setGenerando(true);
+    setPendientes(1);
+    try {
+      // Cada imagen se sube una sola vez: la 2 es el final del par 1→2 y el inicio del 2→3.
+      let entradas;
+      try {
+        entradas = await Promise.all(secuencia.imagenes.map(subirEntrada));
+      } catch (err) {
+        setAviso({ tipo: "error", texto: err.message });
+        return;
+      }
+      const c = {
+        id: nuevoIdSecuencia(),
+        entradas,
+        ajustes: { prompt: secuencia.prompt, calidad: secuencia.calidad, duracion: secuencia.duracion, audio: secuencia.audio },
+        pares: Array.from({ length: clips }, () => ({ estado: "cola", mensaje: "" })),
+      };
+      setCorrida(c);
+      // De a uno: el siguiente par se lanza recién cuando el anterior terminó.
+      for (let i = 0; i < clips; i++) await correrPar(c, i);
+    } finally {
+      setGenerando(false);
+      setPendientes(0);
+    }
+  };
+
+  // Reintentar o seguir esperando un solo par, sin tocar los demás.
+  const sobreUnPar = (accion) => async (i) => {
+    if (generando || !corrida) return;
+    setGenerando(true);
+    setPendientes(1);
+    try {
+      await accion(corrida, i);
+    } finally {
+      setGenerando(false);
+      setPendientes(0);
+    }
+  };
+  const reintentarPar = sobreUnPar((c, i) => correrPar(c, i));
+  const seguirEsperandoPar = sobreUnPar((c, i) => esperarPar(c, i, c.pares[i].taskId));
+
   /* ------------------------------------------------------------ generar */
   const generar = async () => {
     if (generando) return;
     if (estado.modo === "hablar") return generarHablado();
+    if (estado.modo === "secuencia") return generarSecuencia();
     if (!estado.prompt.trim()) {
       setAviso({ tipo: "ambar", texto: "Escribí un prompt antes de generar." });
       return;
@@ -396,6 +502,18 @@ export default function Pagina() {
                 onGenerarVoz={generarVoz}
                 generandoVoz={generandoVoz}
                 costo={costoTanda}
+              />
+            }
+            panelSecuencia={
+              <Secuencia
+                secuencia={secuencia}
+                setSecuencia={setSecuencia}
+                historial={historial}
+                corrida={corrida}
+                onGenerar={generar}
+                generando={generando}
+                onReintentar={reintentarPar}
+                onSeguirEsperando={seguirEsperandoPar}
               />
             }
           />

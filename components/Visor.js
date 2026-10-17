@@ -88,7 +88,7 @@ export default function Visor({ imagen, onCerrar, onAnterior, onSiguiente }) {
               ["Modelo", imagen.modelo],
               ["Calidad", imagen.calidad],
               ["Tamaño", imagen.tamano],
-              ["Origen", { editada: "edición", hablada: "lipsync" }[imagen.origen] || "generación"],
+              ["Origen", { editada: "edición", hablada: "lipsync", secuencia: `secuencia · clip ${imagen.secuenciaOrden ?? "?"}` }[imagen.origen] || "generación"],
               ["Fecha", fecha],
             ].map(([k, v]) => (
               <div key={k} className="flex justify-between gap-3">
