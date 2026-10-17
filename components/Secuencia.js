@@ -70,6 +70,7 @@ export default function Secuencia({ secuencia, setSecuencia, historial, corrida,
 
   const deGaleria = useMemo(() => historial.filter((h) => (h.tipo || "imagen") === "imagen").slice(0, 12), [historial]);
   const { clips, porClip, total } = resumenSecuencia(PIXVERSE, secuencia);
+  const caro = total > 100;
 
   const agregar = (nuevas) =>
     setSecuencia((s) => ({ ...s, imagenes: [...s.imagenes, ...nuevas.map(conUid)].slice(0, MAX_IMAGENES) }));
@@ -222,21 +223,23 @@ export default function Secuencia({ secuencia, setSecuencia, historial, corrida,
         />
       </div>
 
-      {/* Lo que se va a crear, explícito antes de generar. */}
-      <div className="border-[2.5px] border-tinta bg-amarillo/50 px-3 py-2.5 shadow-duroSm">
+      {/* Lo que se va a crear, explícito antes de generar: el total es clips × costo por clip.
+          Más de 100 créditos se resalta, igual que en las otras pestañas. */}
+      <div className={`border-[2.5px] border-tinta px-3 py-2.5 shadow-duroSm ${caro ? "bg-rojo text-hoja" : "bg-amarillo/50"}`}>
         <p className="font-display text-[15px] font-black leading-tight">
           {imagenes.length} {imagenes.length === 1 ? "imagen" : "imágenes"} → {clips} {clips === 1 ? "clip" : "clips"}
         </p>
         <p className="mt-1 font-mono text-[11px] font-bold uppercase tracking-[0.04em]">
           {clips > 0 ? (
             <>
-              ~{porClip} créd. por clip · <span className="marcador">~{total} créd. en total</span>
+              {clips} × ~{porClip} créd. ={" "}
+              <span className={caro ? "border-2 border-hoja px-1" : "marcador"}>~{total} créd. en total</span>
             </>
           ) : (
             "Hacen falta al menos 2 imágenes"
           )}
         </p>
-        <p className="mt-1 text-[10.5px] font-medium text-grafito">
+        <p className={`mt-1 text-[10.5px] font-medium ${caro ? "" : "text-grafito"}`}>
           Estimado: PixVerse no publica precio. Los clips salen sueltos, el montaje va por fuera.
         </p>
       </div>

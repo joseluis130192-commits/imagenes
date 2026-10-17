@@ -8,9 +8,12 @@ import Hablar from "@/components/Hablar";
 import Secuencia from "@/components/Secuencia";
 import Medidor from "@/components/Medidor";
 import Visor from "@/components/Visor";
-import { MODELOS_KIE, buscarModeloKie, creditosHablar } from "@/lib/proveedores";
+import { MODELOS_KIE, buscarModeloKie, costoVideo, creditosHablar, formatoCreditos } from "@/lib/proveedores";
 import { HABLAR_INICIAL, entradaDesdeFicha, subirEntrada, validarHablar } from "@/lib/hablar";
 import { SECUENCIA_INICIAL, nuevoIdSecuencia, resumenSecuencia, validarSecuencia } from "@/lib/secuencia";
+
+// A partir de cuántos créditos una tanda se resalta y pide confirmación.
+const LIMITE_CARO = 100;
 
 const ESTADO_INICIAL = {
   modo: "generar",
@@ -22,10 +25,12 @@ const ESTADO_INICIAL = {
   formato: "png",
   fondo: "auto",
   modoVideo: "texto",
-  duracion: 5,
-  resolucion: "720p",
+  // Video arranca en lo más barato; al elegir un modelo se ajusta a su combinación
+  // más barata (ajustesMasBaratos), y subir es una decisión explícita.
+  duracion: 4,
+  resolucion: "480p",
   aspectoVideo: "16:9",
-  sonido: true,
+  sonido: false,
 };
 
 export default function Pagina() {
@@ -91,6 +96,35 @@ export default function Pagina() {
   }, [historial]);
 
   const entradaKieActual = buscarModeloKie(estado.modelo) || MODELOS_KIE[0];
+
+  // Costo de la tanda de Generar/Editar/Video con los ajustes de este momento. En video
+  // sale de la tabla de costos del modelo (duración × resolución × audio); `caro` resalta
+  // y obliga a confirmar cuando pasa de 100 créditos o cuando el precio no está confirmado.
+  const tanda = useMemo(() => {
+    const m = entradaKieActual;
+    if (m.tipo !== "video" || !m.controlesVideo) {
+      return { detalle: m.nombre, creditos: m.creditos ?? null, disponible: true, caro: (m.creditos ?? 0) > LIMITE_CARO };
+    }
+    const cv = m.controlesVideo;
+    const { creditos, disponible } = costoVideo(m, estado);
+    const detalle = [
+      m.nombre,
+      `${estado.duracion}s`,
+      cv.resolucionesPermitidas && estado.resolucion,
+      cv.sonido && (estado.sonido ? "con audio" : "sin audio"),
+    ]
+      .filter(Boolean)
+      .join(" · ");
+    const aviso = !disponible
+      ? `${m.nombre} no ofrece esta combinación: cambiá la duración o la resolución.`
+      : creditos == null
+      ? "Costo sin confirmar: Kie no publica el precio de esta combinación. Se pide confirmación."
+      : creditos > LIMITE_CARO
+      ? `Más de ${LIMITE_CARO} créditos: se pide confirmación antes de generar.`
+      : "";
+    return { detalle, creditos, disponible, caro: !disponible || creditos == null || creditos > LIMITE_CARO, aviso };
+  }, [entradaKieActual, estado]);
+
   // Los de lipsync cobran según el largo del audio: hasta que hay audio se muestra la tarifa.
   const costoTanda = entradaKieActual.secuencia
     ? `~${resumenSecuencia(entradaKieActual, secuencia).total} créd.`
@@ -98,7 +132,11 @@ export default function Pagina() {
     ? hablar.audio?.duracion != null
       ? `~${creditosHablar(entradaKieActual, hablar.audio.duracion, hablar.resolucion)} créd.`
       : `${creditosHablar(entradaKieActual, 1, hablar.resolucion)} créd./s`
-    : `${entradaKieActual.creditos} créd.`;
+    : !tanda.disponible
+    ? "no disponible"
+    : tanda.creditos == null
+    ? "sin confirmar"
+    : `${formatoCreditos(tanda.creditos)} cr`;
 
   /* ------------------------------------------------------- tareas de Kie */
   // Kie no devuelve la imagen en la respuesta: solo un taskId. Hay que pollear
@@ -348,13 +386,17 @@ export default function Pagina() {
       return;
     }
 
-    // Los modelos de video cuestan entre 10 y 50 veces más que uno de imagen: se pide
-    // confirmación antes de dispararlo para que no salga por accidente.
-    if (estado.modo === "video") {
-      const confirmado = window.confirm(
-        `Vas a generar un video con ${entradaKieActual.nombre} (~${entradaKieActual.creditos} créditos estimados). ¿Continuar?`
-      );
-      if (!confirmado) return;
+    if (!tanda.disponible) {
+      setAviso({ tipo: "ambar", texto: tanda.aviso });
+      return;
+    }
+    // Los videos siempre se confirman (cuestan entre 10 y 50 veces más que una imagen), y
+    // cualquier tanda de más de 100 créditos o sin precio confirmado también.
+    if (estado.modo === "video" || tanda.caro) {
+      const precio =
+        tanda.creditos == null ? "COSTO SIN CONFIRMAR" : `${formatoCreditos(tanda.creditos)} créditos`;
+      const alerta = tanda.caro ? "⚠ " : "";
+      if (!window.confirm(`${alerta}${tanda.detalle}: ${precio}. ¿Continuar?`)) return;
     }
 
     setAviso(null);
@@ -490,6 +532,7 @@ export default function Pagina() {
             onGenerar={generar}
             generando={generando}
             costo={costoTanda}
+            tanda={tanda}
             panelHablar={
               <Hablar
                 estado={estado}
@@ -550,7 +593,13 @@ export default function Pagina() {
         </section>
       </main>
 
-      <BarraAccion modo={estado.modo} generando={generando} costo={costoTanda} onGenerar={generar} />
+      <BarraAccion
+        modo={estado.modo}
+        generando={generando}
+        costo={costoTanda}
+        caro={["generar", "editar", "video"].includes(estado.modo) && tanda.caro}
+        onGenerar={generar}
+      />
 
       {visor >= 0 && historial[visor] && (
         <Visor

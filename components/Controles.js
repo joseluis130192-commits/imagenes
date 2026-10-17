@@ -2,13 +2,17 @@
 
 import { useEffect, useMemo, useRef } from "react";
 import { ASPECTOS_VIDEO, CALIDADES, DURACIONES_VIDEO, ESTILOS, FONDOS, FORMATOS, RESOLUCIONES_VIDEO, TAMANOS } from "@/lib/config";
-import { MODELOS_KIE, buscarModeloKie } from "@/lib/proveedores";
+import { MODELOS_KIE, ajustesMasBaratos, buscarModeloKie, costoVideo, etiquetaCostoVideo } from "@/lib/proveedores";
 import Plegable from "@/components/Plegable";
 
 const CANTIDADES = [1, 2, 3, 4].map((n) => ({ valor: n, nombre: String(n) }));
 
-// El selector se agrupa por uso: "Realista", "Edición", "Económicos", "Retoque", "Video".
-const GRUPOS_ORDEN = ["Realista", "Edición", "Económicos", "Retoque", "Video"];
+// El selector se agrupa por uso: "Realista", "Edición", "Económicos", "Retoque". En video
+// los grupos son "Económicos" y "Calidad alta", y adentro van de más barato a más caro.
+const GRUPOS_ORDEN = ["Realista", "Edición", "Económicos", "Calidad alta", "Retoque"];
+
+/** Para ordenar los de video por su combinación más barata; los sin confirmar, al final. */
+const costoMinimo = (m) => costoVideo(m, ajustesMasBaratos(m)).creditos ?? Infinity;
 
 export function Segmento({ opciones, valor, onCambio, columnas = 2 }) {
   return (
@@ -54,7 +58,7 @@ export function Grupo({ opciones, valor, onCambio, columnas = 4, etiqueta }) {
   );
 }
 
-export default function Controles({ estado, set, archivos, setArchivos, onGenerar, generando, costo, panelHablar, panelSecuencia }) {
+export default function Controles({ estado, set, archivos, setArchivos, onGenerar, generando, costo, tanda, panelHablar, panelSecuencia }) {
   const inputArchivos = useRef(null);
 
   // Una URL por archivo, liberada al cambiar la lista: evita que se acumulen en memoria.
@@ -81,9 +85,14 @@ export default function Controles({ estado, set, archivos, setArchivos, onGenera
     : FORMATOS;
 
   const tamanoCorto = TAMANOS.find((t) => t.valor === estado.tamano)?.corto || estado.tamano;
-  const resumenAjustes = esVideo
-    ? `${entradaKie.nombre} · ${estado.duracion}s · ${entradaKie.creditos} créd.`
-    : `${entradaKie.nombre} · ${tamanoCorto} · ${entradaKie.creditos} créd.`;
+  const resumenAjustes = esVideo ? `${tanda.detalle} · ${costo}` : `${entradaKie.nombre} · ${tamanoCorto} · ${costo}`;
+
+  // Elegir un modelo de video arranca siempre en su combinación más barata (duración
+  // mínima, resolución más baja, sin audio): subir de calidad es una decisión aparte.
+  const elegirModelo = (id, extra = {}) => {
+    const m = buscarModeloKie(id);
+    set({ modelo: id, cantidad: 1, ...extra, ...(m?.tipo === "video" && id !== estado.modelo ? ajustesMasBaratos(m) : {}) });
+  };
 
   // Agrupado por uso: los modelos que no ofrecen el modo actual (ej. Z-Image no edita,
   // Recraft/Topaz/el segment-map de Grok no generan desde cero) directamente no aparecen.
@@ -101,8 +110,11 @@ export default function Controles({ estado, set, archivos, setArchivos, onGenera
         if (!m[estado.modo]) return;
       }
       const grupo = GRUPOS_ORDEN.includes(m.grupo) ? m.grupo : "Realista";
-      mapa[grupo].push({ valor: m.id, etiqueta: m.nombre });
+      // En video el costo va en la misma opción, visible sin abrir nada.
+      const etiqueta = m.tipo === "video" ? `${m.nombre} — ${etiquetaCostoVideo(m)}` : m.nombre;
+      mapa[grupo].push({ valor: m.id, etiqueta, orden: m.tipo === "video" ? costoMinimo(m) : 0 });
     });
+    Object.values(mapa).forEach((lista) => lista.sort((a, b) => a.orden - b.orden));
     return mapa;
   }, [estado.modo, estado.modoVideo]);
 
@@ -133,7 +145,7 @@ export default function Controles({ estado, set, archivos, setArchivos, onGenera
             const capacidad = estado.modoVideo === "imagen" ? "editar" : "generar";
             const yaSirve = entradaKie.tipo === "video" && entradaKie[capacidad];
             const alternativa = MODELOS_KIE.find((m) => m.tipo === "video" && m[capacidad])?.id;
-            set({ modo: v, modelo: yaSirve ? estado.modelo : alternativa || estado.modelo });
+            elegirModelo(yaSirve ? estado.modelo : alternativa || estado.modelo, { modo: v });
             return;
           }
           // Si el modelo elegido no ofrece el modo al que se cambia (Recraft/Topaz/el
@@ -160,7 +172,7 @@ export default function Controles({ estado, set, archivos, setArchivos, onGenera
             const capacidad = v === "imagen" ? "editar" : "generar";
             const yaSirve = entradaKie.tipo === "video" && entradaKie[capacidad];
             const alternativa = MODELOS_KIE.find((m) => m.tipo === "video" && m[capacidad])?.id;
-            set({ modoVideo: v, modelo: yaSirve ? estado.modelo : alternativa || estado.modelo });
+            elegirModelo(yaSirve ? estado.modelo : alternativa || estado.modelo, { modoVideo: v });
           }}
         />
       )}
@@ -273,7 +285,7 @@ export default function Controles({ estado, set, archivos, setArchivos, onGenera
               <select
                 id="modelo"
                 value={estado.modelo}
-                onChange={(e) => set({ modelo: e.target.value, cantidad: 1 })}
+                onChange={(e) => elegirModelo(e.target.value)}
                 className="campo block w-full cursor-pointer truncate font-mono text-[13px]"
               >
                 {GRUPOS_ORDEN.filter((g) => grupos[g].length).map((g) => (
@@ -355,14 +367,26 @@ export default function Controles({ estado, set, archivos, setArchivos, onGenera
             )}
           </Plegable>
 
+          {/* El costo de ESTA tanda con los ajustes de ahora, siempre a la vista arriba del
+              botón. Más de 100 créditos o un precio sin confirmar se resalta (y pide confirmación). */}
+          <div
+            className={`border-[2.5px] border-tinta px-3 py-2.5 shadow-duroSm ${
+              tanda.caro ? "bg-rojo text-hoja" : "bg-hoja"
+            }`}
+          >
+            <span className={`etiqueta !mb-1 ${tanda.caro ? "!text-hoja" : ""}`}>Esta tanda</span>
+            <p className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+              <span className="min-w-0 text-[12px] font-semibold">{tanda.detalle}</span>
+              <b className={`font-display text-[18px] font-black leading-none ${tanda.caro ? "" : "marcador"}`}>{costo}</b>
+            </p>
+            {tanda.aviso && <p className="mt-1.5 text-[11px] font-semibold leading-snug">{tanda.aviso}</p>}
+          </div>
+
           <div className="hidden pt-1 lg:block">
-            <button className="boton-fuerte" onClick={onGenerar} disabled={generando}>
+            <button className="boton-fuerte" onClick={onGenerar} disabled={generando || !tanda.disponible}>
               {generando ? "Generando…" : estado.modo === "video" ? "Generar video →" : estado.modo === "editar" ? "Aplicar cambios →" : "Generar →"}
             </button>
-            <p className="mt-3 text-center font-mono text-[11px] font-bold uppercase tracking-[0.06em] text-grafito">
-              Esta tanda: <span className="marcador text-tinta">{costo}</span>
-              <span className="mx-2">·</span>Ctrl + Enter
-            </p>
+            <p className="mt-3 text-center font-mono text-[11px] font-bold uppercase tracking-[0.06em] text-grafito">Ctrl + Enter</p>
           </div>
         </>
       )}
