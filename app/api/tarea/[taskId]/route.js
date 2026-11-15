@@ -50,6 +50,10 @@ function fichaDesdeInput(input, tipo) {
     const voz = VOCES.find((v) => v.id === input.voice)?.nombre.split(" · ")[0] || input.voice || "voz";
     return { prompt: input.text || "", calidad: voz, origen: "generada", referencias: null };
   }
+  if (input.video_url && input.image_url) {
+    // Este modelo no lleva prompt: la ficha dice qué es para que la galería no quede en blanco.
+    return { prompt: "Reemplazo de personaje en video", calidad: input.resolution || "kie", origen: "reemplazo", referencias: 1 };
+  }
   if (input.first_frame_image_url && input.last_frame_image_url) {
     return { prompt: input.prompt || "", calidad: input.quality || "kie", origen: "secuencia", referencias: 2 };
   }

@@ -15,7 +15,7 @@ export default function BarraAccion({ modo, generando, costo, caro, onGenerar })
         </b>
       </div>
       <button className="boton-fuerte flex-1" onClick={onGenerar} disabled={generando}>
-        {generando ? "Generando…" : modo === "editar" ? "Aplicar cambios →" : modo === "hablar" ? "Hacer hablar →" : modo === "secuencia" ? "Generar clips →" : "Generar →"}
+        {generando ? "Generando…" : modo === "editar" ? "Aplicar cambios →" : modo === "hablar" ? "Hacer hablar →" : modo === "secuencia" ? "Generar clips →" : modo === "reemplazar" ? "Reemplazar personaje →" : "Generar →"}
       </button>
     </div>
   );

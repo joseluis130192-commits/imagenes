@@ -58,7 +58,7 @@ export function Grupo({ opciones, valor, onCambio, columnas = 4, etiqueta }) {
   );
 }
 
-export default function Controles({ estado, set, archivos, setArchivos, onGenerar, generando, costo, tanda, panelHablar, panelSecuencia }) {
+export default function Controles({ estado, set, archivos, setArchivos, onGenerar, generando, costo, tanda, panelHablar, panelSecuencia, panelReemplazar }) {
   const inputArchivos = useRef(null);
 
   // Una URL por archivo, liberada al cambiar la lista: evita que se acumulen en memoria.
@@ -127,13 +127,14 @@ export default function Controles({ estado, set, archivos, setArchivos, onGenera
           { valor: "video", nombre: "Video" },
           { valor: "hablar", nombre: "Hablar" },
           { valor: "secuencia", nombre: "Secuencia" },
+          { valor: "reemplazar", nombre: "Reemplazar" },
         ]}
         columnas={3}
         valor={estado.modo}
         onCambio={(v) => {
-          // Secuencia usa siempre PixVerse: no hay modelo para elegir.
-          if (v === "secuencia") {
-            set({ modo: v, modelo: "kie-pixverse-transition" });
+          // Secuencia y Reemplazar usan un solo modelo cada una: no hay nada que elegir.
+          if (v === "secuencia" || v === "reemplazar") {
+            set({ modo: v, modelo: v === "secuencia" ? "kie-pixverse-transition" : "kie-wan-animate" });
             return;
           }
           if (v === "hablar") {
@@ -157,9 +158,10 @@ export default function Controles({ estado, set, archivos, setArchivos, onGenera
         }}
       />
 
-      {/* "Hablar" y "Secuencia" tienen formularios propios (components/Hablar.js y Secuencia.js). */}
+      {/* "Hablar", "Secuencia" y "Reemplazar" tienen formularios propios (components/Hablar.js, Secuencia.js y Reemplazar.js). */}
       {estado.modo === "hablar" && panelHablar}
       {estado.modo === "secuencia" && panelSecuencia}
+      {estado.modo === "reemplazar" && panelReemplazar}
 
       {estado.modo === "video" && (
         <Segmento
@@ -177,7 +179,7 @@ export default function Controles({ estado, set, archivos, setArchivos, onGenera
         />
       )}
 
-      {estado.modo !== "hablar" && estado.modo !== "secuencia" && (
+      {!["hablar", "secuencia", "reemplazar"].includes(estado.modo) && (
         <>
           {(estado.modo === "editar" || (estado.modo === "video" && estado.modoVideo === "imagen")) && (
             <div>

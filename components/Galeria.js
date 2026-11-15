@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { proporcionDe } from "@/lib/config";
 import { descargarClips } from "@/lib/secuencia";
+import Transcurrido from "@/components/Transcurrido";
 
 const FILTROS_TIPO = [
   { valor: "todos", nombre: "Todos" },
@@ -18,12 +19,13 @@ function inclinacion(id = "") {
   return ((suma % 5) - 2) * 0.5;
 }
 
-function Placa({ proporcion }) {
+/** `desde`: si viene, la placa muestra cuánto lleva esperando (tareas largas como Reemplazar). */
+function Placa({ proporcion, desde }) {
   return (
     <div className="border-[2.5px] border-dashed border-tinta bg-hoja p-1.5 shadow-duroSm sm:p-2">
       <div className="revelando animate-revelar grid place-items-center border-2 border-tinta/20" style={{ aspectRatio: proporcion }}>
         <span className="border-2 border-tinta bg-amarillo px-2.5 py-1 font-mono text-[10px] font-bold uppercase tracking-[0.1em]">
-          Revelando…
+          Revelando…{desde && <> · <Transcurrido desde={desde} /></>}
         </span>
       </div>
     </div>
@@ -85,6 +87,7 @@ function Tarjeta({ imagen, onAbrir, onReusar, onBorrar }) {
           {imagen.modelo} · {imagen.calidad} · {imagen.tamano}
           {imagen.origen === "editada" && <span className="marcador ml-1 text-tinta">editada</span>}
           {imagen.origen === "hablada" && <span className="marcador ml-1 text-tinta">lipsync</span>}
+          {imagen.origen === "reemplazo" && <span className="marcador ml-1 text-tinta">reemplazo</span>}
           {imagen.tipo === "video" && <span className="marcador ml-1 text-tinta">video</span>}
           {imagen.tipo === "audio" && <span className="marcador ml-1 text-tinta">audio</span>}
         </p>
@@ -167,7 +170,7 @@ function GrupoSecuencia({ grupo, onAbrir, onBorrar }) {
   );
 }
 
-export default function Galeria({ imagenes, pendientes, tamano, onAbrir, onReusar, onBorrar }) {
+export default function Galeria({ imagenes, pendientes, tamano, esperaDesde, onAbrir, onReusar, onBorrar }) {
   const [filtro, setFiltro] = useState("todos");
   const filtradas = useMemo(
     () => (filtro === "todos" ? imagenes : imagenes.filter((i) => (i.tipo || "imagen") === filtro)),
@@ -207,7 +210,7 @@ export default function Galeria({ imagenes, pendientes, tamano, onAbrir, onReusa
       ) : (
         <div className="grid grid-cols-2 gap-4 sm:gap-6 xl:grid-cols-3">
           {Array.from({ length: pendientes }).map((_, i) => (
-            <Placa key={`placa-${i}`} proporcion={proporcionDe(tamano)} />
+            <Placa key={`placa-${i}`} proporcion={proporcionDe(tamano)} desde={esperaDesde} />
           ))}
           {agrupar(filtradas).map((g) =>
             g.tipo === "secuencia" ? (

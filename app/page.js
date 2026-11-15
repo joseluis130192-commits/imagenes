@@ -6,11 +6,13 @@ import Controles from "@/components/Controles";
 import Galeria from "@/components/Galeria";
 import Hablar from "@/components/Hablar";
 import Secuencia from "@/components/Secuencia";
+import Reemplazar from "@/components/Reemplazar";
 import Medidor from "@/components/Medidor";
 import Visor from "@/components/Visor";
 import { MODELOS_KIE, buscarModeloKie, costoVideo, creditosHablar, formatoCreditos } from "@/lib/proveedores";
 import { HABLAR_INICIAL, entradaDesdeFicha, subirEntrada, validarHablar } from "@/lib/hablar";
 import { SECUENCIA_INICIAL, nuevoIdSecuencia, resumenSecuencia, validarSecuencia } from "@/lib/secuencia";
+import { REEMPLAZAR_INICIAL, costoReemplazo, validarReemplazo } from "@/lib/reemplazar";
 
 // A partir de cuántos créditos una tanda se resalta y pide confirmación.
 const LIMITE_CARO = 100;
@@ -50,6 +52,9 @@ export default function Pagina() {
   const [secuencia, setSecuencia] = useState(SECUENCIA_INICIAL);
   // La última secuencia lanzada: su id, las imágenes ya subidas y el estado de cada par.
   const [corrida, setCorrida] = useState(null);
+  const [reemplazo, setReemplazo] = useState(REEMPLAZAR_INICIAL);
+  // Cuándo arrancó la espera de una tarea larga (Reemplazar): muestra el tiempo transcurrido.
+  const [esperaDesde, setEsperaDesde] = useState(null);
 
   const set = (parcial) => setEstado((e) => ({ ...e, ...parcial }));
 
@@ -126,7 +131,15 @@ export default function Pagina() {
   }, [entradaKieActual, estado]);
 
   // Los de lipsync cobran según el largo del audio: hasta que hay audio se muestra la tarifa.
-  const costoTanda = entradaKieActual.secuencia
+  // Reemplazar cobra por segundo de video: hasta que se lee la duración se muestra la tarifa.
+  const creditosReemplazar = costoReemplazo(entradaKieActual, reemplazo);
+  const reemplazoCaro = creditosReemplazar != null && creditosReemplazar > LIMITE_CARO;
+
+  const costoTanda = entradaKieActual.modos
+    ? creditosReemplazar != null
+      ? `${formatoCreditos(creditosReemplazar)} cr`
+      : `${entradaKieActual.modos[reemplazo.modo].creditosPorSegundo[reemplazo.resolucion] ?? "?"} cr/s`
+    : entradaKieActual.secuencia
     ? `~${resumenSecuencia(entradaKieActual, secuencia).total} créd.`
     : entradaKieActual.hablar
     ? hablar.audio?.duracion != null
@@ -152,7 +165,8 @@ export default function Pagina() {
     // Un video tarda mucho más que una imagen: 150 intentos de 2s son 5 minutos, contra
     // los 3 minutos (90 intentos) que alcanzan para el resto de los modelos. El lipsync
     // es todavía más lento (Infinitalk y Kling Avatar pueden pasar los 5 minutos): 10.
-    const maxIntentos = { hablar: 300, video: 150 }[tipo] || 90;
+    // Reemplazar promedia unos 5 minutos: también 10 de tope.
+    const maxIntentos = { hablar: 300, reemplazar: 300, video: 150 }[tipo] || 90;
 
     for (let intento = 0; intento < maxIntentos; intento++) {
       await new Promise((r) => setTimeout(r, 2000));
@@ -371,11 +385,59 @@ export default function Pagina() {
   const reintentarPar = sobreUnPar((c, i) => correrPar(c, i));
   const seguirEsperandoPar = sobreUnPar((c, i) => esperarPar(c, i, c.pares[i].taskId));
 
+  /* --------------------------------------------------------- reemplazar */
+  const generarReemplazo = async () => {
+    const problema = validarReemplazo(entradaKieActual, reemplazo);
+    if (problema) {
+      setAviso({ tipo: "ambar", texto: problema });
+      return;
+    }
+
+    // Como el resto de los videos, se confirma siempre; más de 100 créditos va con alerta.
+    const modo = entradaKieActual.modos[reemplazo.modo];
+    const texto = `${modo.nombre} · ${reemplazo.resolucion} · ${Math.ceil(reemplazo.video.duracion)}s de video: ${formatoCreditos(creditosReemplazar)} créditos. Suele tardar unos 5 minutos. ¿Continuar?`;
+    if (!window.confirm(`${reemplazoCaro ? "⚠ " : ""}${texto}`)) return;
+
+    setAviso(null);
+    setGenerando(true);
+    setPendientes(1);
+    try {
+      // El video va SIEMPRE directo del navegador al bucket (no entra en un pedido a Vercel);
+      // la imagen, que es chica, por la File Upload API de Kie.
+      let video, imagen;
+      try {
+        [video, imagen] = await Promise.all([subirEntrada(reemplazo.video, { directo: true }), subirEntrada(reemplazo.imagen)]);
+      } catch (err) {
+        setAviso({ tipo: "error", texto: err.message });
+        return;
+      }
+      const respuesta = await fetch("/api/reemplazar", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ modo: reemplazo.modo, resolucion: reemplazo.resolucion, video, imagen }),
+      });
+      const datos = await respuesta.json();
+      if (!respuesta.ok) {
+        setAviso({ tipo: "error", texto: datos.error || "Kie rechazó el pedido." });
+        return;
+      }
+      setEsperaDesde(Date.now());
+      await pollearTareaKie(datos.taskId, "reemplazar");
+    } catch {
+      setAviso({ tipo: "error", texto: "No se pudo hablar con el servidor." });
+    } finally {
+      setEsperaDesde(null);
+      setGenerando(false);
+      setPendientes(0);
+    }
+  };
+
   /* ------------------------------------------------------------ generar */
   const generar = async () => {
     if (generando) return;
     if (estado.modo === "hablar") return generarHablado();
     if (estado.modo === "secuencia") return generarSecuencia();
+    if (estado.modo === "reemplazar") return generarReemplazo();
     if (!estado.prompt.trim()) {
       setAviso({ tipo: "ambar", texto: "Escribí un prompt antes de generar." });
       return;
@@ -547,6 +609,18 @@ export default function Pagina() {
                 costo={costoTanda}
               />
             }
+            panelReemplazar={
+              <Reemplazar
+                reemplazo={reemplazo}
+                setReemplazo={setReemplazo}
+                historial={historial}
+                onGenerar={generar}
+                generando={generando}
+                esperaDesde={esperaDesde}
+                costo={costoTanda}
+                caro={reemplazoCaro}
+              />
+            }
             panelSecuencia={
               <Secuencia
                 secuencia={secuencia}
@@ -585,6 +659,7 @@ export default function Pagina() {
           <Galeria
             imagenes={historial}
             pendientes={pendientes}
+            esperaDesde={esperaDesde}
             tamano={estado.tamano}
             onAbrir={(img) => setVisor(historial.findIndex((h) => h.id === img.id))}
             onReusar={reusar}
@@ -597,7 +672,7 @@ export default function Pagina() {
         modo={estado.modo}
         generando={generando}
         costo={costoTanda}
-        caro={["generar", "editar", "video"].includes(estado.modo) && tanda.caro}
+        caro={estado.modo === "reemplazar" ? reemplazoCaro : ["generar", "editar", "video"].includes(estado.modo) && tanda.caro}
         onGenerar={generar}
       />
 
